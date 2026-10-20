@@ -62,8 +62,9 @@ function delete_bookmark(int $id, int $uid): void {
     $pdo->prepare('DELETE FROM bookmarks WHERE id=?')->execute([$id]);
 }
 
-function top_tags(int $uid, int $limit = 40): array {
-    $st = db()->prepare("SELECT t.tag, COUNT(*) c FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? AND t.suggested=0 GROUP BY t.tag ORDER BY c DESC, t.tag LIMIT " . (int)$limit);
+function top_tags(int $uid, int $limit = 40, int $min = 1, array $exclude = []): array {
+    $not = $exclude ? ' AND t.tag NOT IN (' . implode(',', array_map(fn($t) => db()->quote($t), $exclude)) . ')' : '';
+    $st = db()->prepare("SELECT t.tag, COUNT(*) c FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? AND t.suggested=0$not GROUP BY t.tag HAVING c>=" . (int)$min . " ORDER BY c DESC, t.tag LIMIT " . (int)$limit);
     $st->execute([$uid]);
     return $st->fetchAll();
 }
