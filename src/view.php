@@ -56,7 +56,9 @@ function render_tags(array $r): string {
     $tgt = ' hx-target="#tg' . $id . '" hx-swap="outerHTML"';
     $vals = fn($act, $t) => ' hx-vals=\'' . h(json_encode(['id' => $id, 'action' => $act, 'tag' => $t])) . '\'';
     $o = '<div class="tags" id="tg' . $id . '">';
-    foreach ($r['tags'] ?? [] as $t) {
+    $tags = $r['tags'] ?? [];
+    usort($tags, fn($a, $b) => in_array($b, BM_FORMAT_TAGS, true) <=> in_array($a, BM_FORMAT_TAGS, true));   // link type first (stable), then the rest alphabetically
+    foreach ($tags as $t) {
         $e = h(rawurlencode($t));
         $o .= '<span class="tag' . (in_array($t, BM_FORMAT_TAGS, true) ? ' fmt' : '') . '"><a href="?tag=' . $e . '" hx-get="search.php?tag=' . $e . '" hx-target="#results" hx-swap="innerHTML" hx-push-url="?tag=' . $e . '" hx-include="[name=q]">' . h($t) . '</a>'
             . '<button class="x" title="Remove tag" hx-post="tag.php"' . $vals('remove', $t) . $tgt . '>×</button></span>';
