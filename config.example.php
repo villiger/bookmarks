@@ -1,17 +1,17 @@
 <?php
 // Copy to config.php (gitignored) and edit.
 return [
-    // Secret used ONLY for add.php?k=... (bookmarklet). Generate: php -r 'echo bin2hex(random_bytes(24));'
-    'token'        => 'CHANGE_ME',
-    // UI login: password_hash() of the password. Generate: php -r 'echo password_hash("yourpassword", PASSWORD_DEFAULT);'
-    'password_hash'=> '',
     'db_path'      => __DIR__ . '/data/bookmarks.db',   // keep outside webroot
     'lock_path'    => __DIR__ . '/data/worker.lock',
     // Optional absolute URL of the public/ dir (for the bookmarklet), e.g. https://example.com/bookmarks
-    'base_url'     => '',
+    'base_url'     => '',   // REQUIRED: used in login links and bookmarklets, no trailing slash
+    'mail_from'    => 'bookmarks@localhost',
+    // SMTP for login mails. Leave host empty => mails are only appended to data/mail.log (chmod 600).
+    'smtp'         => ['host' => '', 'port' => 587, 'secure' => 'tls' /* tls|ssl|none */, 'user' => '', 'pass' => ''],
+    'mail_log'     => __DIR__ . '/data/mail.log',
 
     // LLM (llama.cpp)
-    'llama_cli'    => '/opt/llama.cpp/llama-cli',
+    'llama_cli'    => '/opt/llama.cpp/llama-completion',
     'llama_model'  => '/opt/models/qwen2.5-0.5b-instruct-q4_k_m.gguf',
     'llama_threads'=> 2,
     'llama_ctx'    => 2048,

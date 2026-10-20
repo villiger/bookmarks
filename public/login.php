@@ -1,35 +1,30 @@
 <?php
-require_once __DIR__ . '/../src/db.php';
+require_once __DIR__ . '/../src/auth.php';
+require_once __DIR__ . '/_head.php';
 header('Cache-Control: no-store');
-$err = '';
-$ip = $_SERVER['REMOTE_ADDR'] ?? '?';
-$pdo = db();
-$pdo->prepare('DELETE FROM login_failures WHERE ts < ?')->execute([time() - 900]);
+if (current_user()) { header('Location: ./'); exit; }
+$msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $n = $pdo->prepare('SELECT COUNT(*) FROM login_failures WHERE ip=? AND ts >= ?');
-    $n->execute([$ip, time() - 900]);
-    if ((int)$n->fetchColumn() >= 10) {
-        http_response_code(429);
-        $err = 'Too many failed attempts. Try again in 15 minutes.';
-    } else {
-        $hash = (string)cfg('password_hash');
-        if ($hash !== '' && password_verify((string)($_POST['password'] ?? ''), $hash)) {
-            $pdo->prepare('DELETE FROM login_failures WHERE ip=?')->execute([$ip]);
-            setcookie('bm_auth', session_value(), [
-                'expires' => time() + 86400 * 30, 'path' => cookie_path(),
-                'secure' => !empty($_SERVER['HTTPS']), 'httponly' => true, 'samesite' => 'Lax',
-            ]);
-            header('Location: ./'); exit;
+    $email = strtolower(trim((string)($_POST['email'] ?? '')));
+    if (!valid_email($email)) { $msg = 'Please enter a valid email address.'; }
+    else {
+        // Same response in every case (no account enumeration).
+        $msg = 'If this address is eligible, a login link is on its way (valid ' . LINK_MINUTES . ' minutes). New addresses are sent to the admin for approval.';
+        $limited = rate_limited('link-email', $email, 5) | rate_limited('link-ip', client_ip(), 5);
+        if (!$limited) {
+            $u = find_user_by_email($email);
+            if ($u && $u['status'] === 'active') {
+                email_login_link($u);
+            } elseif (!$u) {
+                create_user($email, false, 'pending');
+                $admins = db()->query("SELECT email FROM users WHERE is_admin=1 AND status='active'")->fetchAll(PDO::FETCH_COLUMN);
+                foreach ($admins as $a) send_mail($a, 'Bookmarks: new account request', "$email requested access.\nReview: " . base_url() . "/admin.php\n");
+            }
         }
-        $pdo->prepare('INSERT INTO login_failures(ip, ts) VALUES(?,?)')->execute([$ip, time()]);
-        sleep(1);
-        $err = 'Wrong password.';
     }
 }
-?><!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex"><title>Login · Bookmarks</title><link rel="stylesheet" href="style.css"></head>
-<body><main class="login"><h1>Bookmarks</h1>
-<form method="post"><input type="password" name="password" placeholder="Password" autofocus required>
-<button type="submit">Log in</button></form>
-<?php if ($err): ?><p class="err"><?= h($err) ?></p><?php endif; ?></main></body></html>
+page_head('Login'); ?>
+<main class="login"><h1>Bookmarks</h1>
+<form method="post"><input type="email" name="email" placeholder="you@example.com" autofocus required>
+<button type="submit">Email me a login link</button></form>
+<?php if ($msg): ?><p class="note"><?= h($msg) ?></p><?php endif; ?></main></body></html>

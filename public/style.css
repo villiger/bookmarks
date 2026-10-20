@@ -24,3 +24,6 @@ mark{background:var(--mark);color:inherit;border-radius:2px}
 .login{max-width:320px;margin:20vh auto}.login button{width:100%;padding:10px;font:inherit;border:0;border-radius:8px;background:var(--ac);color:#fff;cursor:pointer}
 .err{color:#d33}
 @media(max-width:560px){.thumbwrap{display:none}}
+form.inline{display:inline}.linkbtn{border:0;background:none;color:var(--ac);cursor:pointer;font:inherit}
+.note{color:var(--mut)}.bmbox{margin:10px 0;color:var(--mut);font-size:13px}
+.main button{font:inherit;padding:3px 10px;margin-right:6px;cursor:pointer}

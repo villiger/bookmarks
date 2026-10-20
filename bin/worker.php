@@ -27,7 +27,7 @@ while (true) {
         $title = $c['title'] ?: $b['title'] ?: $b['url'];
         $desc = $c['description'];
         $note = null;
-        $existing = known_tags($pdo);
+        $existing = known_tags($pdo, (int)$b['user_id']);
         $yt = youtube_id($b['url']) !== null;
         try {
             $r = match_known_tags($existing, $c['keywords'], $title, $desc, $yt);

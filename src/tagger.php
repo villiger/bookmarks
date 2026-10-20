@@ -37,7 +37,7 @@ function llama_run(string $prompt, int $maxTokens, ?string $jsonSchema): string 
     $cmd = wrapper_prefix() . ' ' . escapeshellarg($bin)
         . ' -m ' . escapeshellarg($model)
         . ' -c ' . (int)cfg('llama_ctx') . ' -t ' . (int)cfg('llama_threads')
-        . ' -n ' . $maxTokens . ' --temp 0.2 -no-cnv --no-display-prompt --no-warmup --log-disable'
+        . ' -n ' . $maxTokens . ' --temp 0.2 -no-cnv --no-display-prompt --no-warmup'
         . ($jsonSchema ? ' --json-schema ' . escapeshellarg($jsonSchema) : '')
         . ' -p ' . escapeshellarg($chatml);
     $pipes = [];
@@ -93,11 +93,13 @@ function llm_summary(string $title, string $body): string {
 }
 
 /** Known vocabulary = seed_tags_file merged with most-used existing tags (seed first). */
-function known_tags(PDO $pdo, int $existingLimit = 30): array {
+function known_tags(PDO $pdo, int $uid, int $existingLimit = 30): array {
     $seed = [];
     $f = cfg('seed_tags_file');
     if ($f && is_file($f)) $seed = normalize_tags_all(file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES));
-    $used = $pdo->query("SELECT tag FROM tags GROUP BY tag ORDER BY COUNT(*) DESC LIMIT " . (int)$existingLimit)->fetchAll(PDO::FETCH_COLUMN);
+    $q = $pdo->prepare("SELECT t.tag FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? GROUP BY t.tag ORDER BY COUNT(*) DESC LIMIT " . (int)$existingLimit);
+    $q->execute([$uid]);
+    $used = $q->fetchAll(PDO::FETCH_COLUMN);
     return array_values(array_unique(array_merge($used, $seed)));
 }
 

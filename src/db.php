@@ -12,7 +12,7 @@ function db(): PDO {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
     $pdo->exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL;');
-    $has = $pdo->query("SELECT 1 FROM sqlite_master WHERE name='login_failures'")->fetchColumn();
+    $has = $pdo->query("SELECT 1 FROM sqlite_master WHERE name='bookmarks_fts'")->fetchColumn();
     if ($new || !$has) $pdo->exec(file_get_contents(__DIR__ . '/../schema.sql'));
     @chmod($path, 0660);
     return $pdo;
@@ -34,15 +34,19 @@ function fts_reindex(int $id): void {
         ->execute([$id, $row['title'], $row['description'], $row['body'], implode(' ', $tags), $row['url']]);
 }
 
-function delete_bookmark(int $id): void {
+function delete_bookmark(int $id, int $uid): void {
     $pdo = db();
+    $o = $pdo->prepare('SELECT 1 FROM bookmarks WHERE id=? AND user_id=?'); $o->execute([$id, $uid]);
+    if (!$o->fetchColumn()) return;
     $pdo->prepare('DELETE FROM bookmarks_fts WHERE rowid=?')->execute([$id]);
     $pdo->prepare('DELETE FROM tags WHERE bookmark_id=?')->execute([$id]);
     $pdo->prepare('DELETE FROM bookmarks WHERE id=?')->execute([$id]);
 }
 
-function top_tags(int $limit = 40): array {
-    return db()->query("SELECT tag, COUNT(*) c FROM tags GROUP BY tag ORDER BY c DESC, tag LIMIT " . (int)$limit)->fetchAll();
+function top_tags(int $uid, int $limit = 40): array {
+    $st = db()->prepare("SELECT t.tag, COUNT(*) c FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? GROUP BY t.tag ORDER BY c DESC, t.tag LIMIT " . (int)$limit);
+    $st->execute([$uid]);
+    return $st->fetchAll();
 }
 
 /** Turn user input into a safe FTS5 query: every word is a quoted prefix term (AND). */
@@ -52,9 +56,9 @@ function fts_query(string $q): string {
     return implode(' ', array_map(fn($t) => '"' . $t . '"*', $terms));
 }
 
-function search_bookmarks(string $q, string $tag, int $limit = 100): array {
+function search_bookmarks(int $uid, string $q, string $tag, int $limit = 100): array {
     $pdo = db();
-    $params = [];
+    $params = [':uid' => $uid];
     $tagSql = '';
     if ($tag !== '') { $tagSql = ' AND b.id IN (SELECT bookmark_id FROM tags WHERE tag = :tag)'; $params[':tag'] = $tag; }
     $fq = fts_query($q);
@@ -65,10 +69,10 @@ function search_bookmarks(string $q, string $tag, int $limit = 100): array {
                   snippet(bookmarks_fts,2,char(2),char(3),'…',14) AS h_body,
                   highlight(bookmarks_fts,1,char(2),char(3)) AS h_desc
                 FROM bookmarks_fts JOIN bookmarks b ON b.id = bookmarks_fts.rowid
-                WHERE bookmarks_fts MATCH :q $tagSql
+                WHERE bookmarks_fts MATCH :q AND b.user_id = :uid $tagSql
                 ORDER BY bm25(bookmarks_fts, 10.0, 4.0, 1.0, 6.0, 0.5) LIMIT $limit";
     } else {
-        $sql = "SELECT b.*, NULL h_title, NULL h_body, NULL h_desc FROM bookmarks b WHERE 1=1 $tagSql
+        $sql = "SELECT b.*, NULL h_title, NULL h_body, NULL h_desc FROM bookmarks b WHERE b.user_id = :uid $tagSql
                 ORDER BY b.created_at DESC, b.id DESC LIMIT $limit";
     }
     $st = $pdo->prepare($sql);
