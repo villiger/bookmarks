@@ -6,8 +6,8 @@ require_once __DIR__ . '/crawler.php';
 
 const BM_CATEGORIES = ['dev', 'news', 'video', 'shopping', 'reference', 'article', 'tool', 'other'];
 const BM_FORMAT_TAGS = ['video', 'book', 'podcast', 'recipe', 'paper', 'product', 'repo'];   // medium, from structure (format_rules.txt); never from the model, never counted toward the 3
-const BM_MIN = 3;
-const BM_MAX = 6;
+const BM_MIN = 2;      // applied topic tags: 2..4 (format tags come on top)
+const BM_MAX = 4;
 const BM_ALIASES = ['golang' => 'go', 'js' => 'javascript', 'machine learning' => 'ai', 'llm' => 'ai', 'open source' => 'opensource', 'selfhosted' => 'self-hosted', 'homelab' => 'self-hosted',
     'recipe' => 'food', 'sqlite' => 'database', 'sql' => 'database', 'docker' => 'devops', 'kubernetes' => 'devops', 'cybersecurity' => 'security', 'nachrichten' => 'news', 'politik' => 'politics'];
 const BM_YT_CATEGORY = ['music' => 'music', 'science & technology' => 'tech', 'education' => 'tutorial', 'gaming' => 'gaming', 'howto & style' => 'tutorial', 'news & politics' => 'news',
@@ -98,10 +98,11 @@ function category_for(array $tags, bool $yt): string {
     return 'other';
 }
 
-/** A usable summary: 20-450 chars, about the subject (not availability/price/store), not "This page..."; '' otherwise. */
-function valid_summary(string $s): string {
+/** A usable summary: 20-450 chars, about the subject (not availability/price/store), not "This page..." (and not "This article..." for books, videos, ...); '' otherwise. */
+function valid_summary(string $s, array $format = []): string {
     $s = clean_text(strip_tags($s));
-    return (mb_strlen($s) < 20 || mb_strlen($s) > 450 || preg_match('/^(this (web)?page|diese seite)\b|\b(available|kaufen|disponibile|formats?|price|shipping|in stock|add to cart)\b/i', $s)) ? '' : $s;
+    $generic = array_intersect($format, ['book', 'video', 'podcast', 'product', 'repo']) ? '|article|website|site|post' : '';
+    return (mb_strlen($s) < 20 || mb_strlen($s) > 450 || preg_match('/^(this (web)?page' . $generic . ')\b|^diese seite\b|\b(available|kaufen|disponibile|formats?|price|shipping|in stock|add to cart)\b/i', $s)) ? '' : $s;
 }
 
 /** New-tag candidates: not vocabulary tags (or stems of them), no site/brand/channel names. */
@@ -167,27 +168,35 @@ function openrouter_post(PDO $pdo, string $prompt, int $maxTokens): array {
 
 /**
  * Ask the model about one page: vocabulary picks, new tags, category, summary. [] on a permanent problem, ['transient' => true] to retry later.
+ * $format = detected format tags (book, video, ...): the summary must start by saying what the thing is; one stricter retry if it does not.
  * @return array{tags:string[],new_tags:string[],category:string,summary:string,cost:float}|array
  */
-function suggest_external(PDO $pdo, string $url, array $c, array $names, array $shots = []): array {
+function suggest_external(PDO $pdo, string $url, array $c, array $names, array $shots = [], array $format = []): array {
     $yt = youtube_id($url) !== null;
-    $prompt = 'Domain: ' . host_of($url) . "\nTitle: " . mb_substr($c['title'] ?: $url, 0, 200) . (!empty($c['author']) ? "\nAuthor: {$c['author']}" : '') . "\nDescription: " . mb_substr($c['description'], 0, 400)
+    $type = ['book' => 'a book', 'video' => 'a YouTube video', 'podcast' => 'a podcast', 'recipe' => 'a recipe', 'paper' => 'a paper', 'product' => 'a product', 'repo' => 'a code repository'][$format[0] ?? ''] ?? 'a web page';
+    $base = 'Domain: ' . host_of($url) . "\nDetected type: $type\nTitle: " . mb_substr($c['title'] ?: $url, 0, 200) . (!empty($c['author']) ? "\nAuthor: {$c['author']}" : '') . "\nDescription: " . mb_substr($c['description'], 0, 400)
         . ($yt ? "\nChannel: {$c['channel']}\nYouTube category: {$c['yt_category']}\nYouTube keywords: " . mb_substr($c['keywords'], 0, 300) : '') . "\nText: " . mb_substr($c['body'], 0, 1200)
         . "\n\nVocabulary: " . implode(', ', array_diff($names, BM_FORMAT_TAGS))
-        . ($shots ? "\nHow this user tags other pages:\n" . implode("\n", $shots) : '')
-        . "\n\nReply with JSON only: {\"tags\": [3 to 5 tags chosen ONLY from the vocabulary, most relevant first; only tags that are central to this page; avoid vague catch-alls like tools, tech, business, productivity or fun unless the page is really about them], \"new_tags\": [0 to 3 specific new lowercase tags of 1-2 words; if fewer than 3 vocabulary tags fit, give at least 3 minus that many], "
-        . "\"category\": \"one of " . implode('|', BM_CATEGORIES) . "\", \"summary\": \"2-3 neutral sentences, max 400 characters, in the language of the page, saying what the page/book/article/video IS or argues; never mention availability, price, formats, shipping or the store; no marketing fluff; not starting with 'This page'\"}";
-    $p = openrouter_post($pdo, $prompt, 450);
-    if (!isset($p['j'])) return $p;
-    $j = $p['j'];
-    return ['tags' => normalize_tags((array)($j['tags'] ?? [])), 'new_tags' => normalize_tags((array)($j['new_tags'] ?? [])), 'category' => in_array($j['category'] ?? '', BM_CATEGORIES, true) ? $j['category'] : '',
-            'summary' => valid_summary((string)($j['summary'] ?? '')), 'cost' => $p['cost']];
+        . ($shots ? "\nHow this user tags other pages:\n" . implode("\n", $shots) : '');
+    $ask = fn(string $extra) => $base . "\n\nReply with JSON only: {\"tags\": [2 to 4 tags chosen ONLY from the vocabulary, most relevant first; only tags central to this page; avoid vague catch-alls like tools, tech, business, productivity or fun unless the page is really about them], "
+        . "\"new_tags\": [0 to 3 specific new lowercase tags of 1-2 words; if fewer than 2 vocabulary tags fit, give at least 2 minus that many], \"category\": \"one of " . implode('|', BM_CATEGORIES) . "\", "
+        . "\"summary\": \"Write 2-3 sentences (max 400 characters) that say what this is and what it is about, starting with what it is, e.g. 'A book by Gil Durán arguing...', 'A YouTube video by X showing...', 'An essay by James Madison (Federalist No. 10) arguing...', "
+        . "'A free open-source tool for...', 'A Wikipedia article about...'. Describe the content itself, not the website, availability, price, formats or shipping. Same language as the page. No marketing fluff.$extra\"}";
+    $out = ['transient' => true];
+    foreach (['', " It is $type: the first words must name it (for example 'A " . ltrim(substr($type, 2)) . "...'); never start with 'This'."] as $i => $extra) {
+        $p = openrouter_post($pdo, $ask($extra), 450);
+        if (!isset($p['j'])) return $i ? $out : $p;
+        $j = $p['j'];
+        $out = ['tags' => normalize_tags((array)($j['tags'] ?? [])), 'new_tags' => normalize_tags((array)($j['new_tags'] ?? [])), 'category' => in_array($j['category'] ?? '', BM_CATEGORIES, true) ? $j['category'] : '',
+                'summary' => valid_summary((string)($j['summary'] ?? ''), $format), 'cost' => $p['cost'] + ($out['cost'] ?? 0)];
+        if ($out['summary'] !== '') break;
+    }
+    return $out;
 }
 
 /**
- * Merge the model's answer into applied/suggested lists. Its vocabulary picks come most-relevant first: the first ones are trusted (together with rule hits),
- * later ones need support in the page text, otherwise they are held back. New tags are suggestions. Under 3 applied: text-supported suggestions are promoted,
- * then the held-back picks. Brand names never become tags. $text = title + description + summary, $body = page text.
+ * Merge the model's answer into applied/suggested lists (applied: 2..4). Its vocabulary picks come most-relevant first: the first 2 (counting rule hits) are trusted,
+ * the 3rd and 4th need support in the page text, the rest become suggestions. New tags are suggestions; under 2 applied, text-supported ones are promoted. Brand names never become tags. $text = title + description + summary, $body = page text.
  */
 function merge_picks(array $x, array $vocab, array $applied, array $sugg, string $channel, string $url, array $brands, string $text, string $body = ''): array {
     $names = array_keys($vocab);
@@ -205,8 +214,7 @@ function merge_picks(array $x, array $vocab, array $applied, array $sugg, string
         $words = array_filter(preg_split('/\s+/u', mb_strtolower($t)), fn($w) => mb_strlen($w) >= 4);
         if ($words && !array_filter($words, fn($w) => !str_contains($hay, " $w ") && !str_contains($hay, " {$w}s "))) { $applied[] = $t; unset($new[$i]); }
     }
-    while (count($applied) < BM_MIN && $held) $applied[] = array_shift($held);
-    return [$applied, array_slice(array_values(array_unique(array_diff(array_merge($new, $held, $sugg), $applied))), 0, 5)];
+    return [$applied, array_slice(array_values(array_unique(array_diff(array_merge($new, $held, $sugg), $applied))), 0, 4)];
 }
 
 /**
@@ -225,7 +233,7 @@ function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 
     $sugg = [];
     $brands = brand_tokens($url, (string)($c['site_name'] ?? ''));
     $x = [];                                                                                                     // 2. one OpenRouter call
-    try { $x = suggest_external($pdo, $url, $c, $names, user_shots($pdo, $uid, host_of($url))); } catch (Throwable $e) { error_log('openrouter: ' . $e->getMessage()); }
+    try { $x = suggest_external($pdo, $url, $c, $names, user_shots($pdo, $uid, host_of($url)), $format); } catch (Throwable $e) { error_log('openrouter: ' . $e->getMessage()); }
     $deferred = !empty($x['transient']);
     if ($deferred) $x = [];
     $text = $title . ' ' . $c['description'] . ' ' . ($x['summary'] ?? '');
@@ -247,7 +255,8 @@ function llm_backoff(int $attempts): ?int { return [60, 300, 1800, 7200][$attemp
  */
 function llm_retry(PDO $pdo, array $b, array $vocab): string {
     $c = ['title' => (string)$b['title'], 'description' => (string)$b['description'], 'body' => (string)$b['body'], 'keywords' => '', 'channel' => '', 'yt_category' => ''];
-    $x = suggest_external($pdo, $b['url'], $c, array_keys($vocab), user_shots($pdo, (int)$b['user_id'], host_of($b['url'])));
+    $fmt = array_column($pdo->query('SELECT tag FROM tags WHERE bookmark_id=' . (int)$b['id'])->fetchAll(), 'tag');
+    $x = suggest_external($pdo, $b['url'], $c, array_keys($vocab), user_shots($pdo, (int)$b['user_id'], host_of($b['url'])), array_values(array_intersect($fmt, BM_FORMAT_TAGS)));
     $attempts = (int)$b['llm_attempts'] + 1;
     if (!empty($x['transient'])) {
         $d = llm_backoff($attempts);

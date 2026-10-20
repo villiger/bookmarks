@@ -5,6 +5,6 @@ book | type:Book | type:Audiobook | isbn | host:goodreads.com/book | host:openli
 video | type:VideoObject | og:video. | host:youtube.com | host:youtu.be | host:vimeo.com
 podcast | type:PodcastEpisode | type:PodcastSeries | host:open.spotify.com/show | host:open.spotify.com/episode | host:podcasts.apple.com
 recipe | type:Recipe
-paper | type:ScholarlyArticle | host:arxiv.org | host:doi.org | url:/\.pdf($|\?)/i | meta:citation_title
+paper | type:ScholarlyArticle | host:arxiv.org | host:doi.org | url:/\.pdf($|\?)/i | meta:citation_doi | meta:citation_journal_title
 product | !book | type:Product
 repo | url:/^https?:\/\/(www\.)?(github\.com|gitlab\.com|codeberg\.org)\/[^\/]+\/[^\/]+\/?$/i
