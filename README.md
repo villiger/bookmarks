@@ -32,3 +32,7 @@ Optional `youtube_api_key` adds YouTube topic categories as keywords.
 
 ## Resources
 The worker is a short PHP process (about 75 MB) run by a systemd timer with `MemoryMax=200M`. No local model, no daemon. OpenRouter cost is about $0.10 per 1000 bookmarks with Gemini Flash-Lite.
+
+## Import / export
+
+Index page, "Import / export": exports all bookmarks as Netscape bookmark HTML (tags in `TAGS`, summary as `<DD>`), which Safari, Chrome and Firefox import. Importing reads any such file (Safari: File > Export > Bookmarks); duplicates are skipped, tracking parameters stripped, and bookmarks with tags keep them untouched, the rest are tagged by the worker.

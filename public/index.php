@@ -34,9 +34,14 @@ $reqs = $user['is_admin'] ? (int)db()->query("SELECT COUNT(*) FROM users WHERE s
 <li>Add <b>Get Dictionary Value</b> for <code>status</code>, then <b>Show Notification</b>: "Saved ✓ (status)".</li>
 </ol>
 <p>The Shortcut syncs to your Mac via iCloud and appears in Safari's Share menu there too. To share it, create an iCloud link with the key removed and add an Import Question for <code>k</code>.</p></details>
+<details class="bmbox"><summary>Import / export</summary>
+<p><a href="export.php" download>Export all bookmarks</a> (HTML, importable into Safari, Chrome and Firefox).</p>
+<form method="post" action="import.php" enctype="multipart/form-data" class="inline"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+Import a bookmarks file (Safari: File ▸ Export ▸ Bookmarks): <input type="file" name="file" accept=".html,.htm" required> <button>Import</button></form></details>
 <form class="addurl" hx-post="add.php" hx-target="#results" hx-swap="afterbegin" hx-on:bm-added="this.reset()">
 <input type="text" name="urls" placeholder="example.com or https://…" required autocomplete="off" autocapitalize="off" spellcheck="false"><button type="submit">Save</button></form>
 <div id="addmsg" class="err"></div>
+<?php if (!empty($_GET['imp'])): ?><p class="count"><?= h($_GET['imp']) ?></p><?php endif; ?>
 <datalist id="vocab"><?php foreach (user_vocabulary($uid) as $v): ?><option value="<?= h($v) ?>"><?php endforeach; ?></datalist>
 <input type="search" name="q" value="<?= h($q) ?>" placeholder="Search title, description, text, tags…" autofocus autocomplete="off"
   hx-get="search.php" hx-trigger="keyup changed delay:300ms, search" hx-target="#results" hx-vals='js:{tag: new URLSearchParams(location.search).get("tag") || ""}'>

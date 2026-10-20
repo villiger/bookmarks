@@ -105,7 +105,7 @@ function valid_summary(string $s, array $format = []): string {
         $cut = mb_substr($s, 0, 450);
         $s = preg_match('/^.*[.!?]/su', $cut, $m) ? $m[0] : '';
     }
-    $s = preg_replace_callback('/^(this|the) (web)?(page|video|article|post|site|website|book|podcast|channel) (\w+s|\w+ed) (that |how )?/iu', fn() => '', $s, 1, $n);   // "This article argues that X" -> "X"
+    $s = preg_replace('/^(this|the) (web)?(page|video|article|post|site|website|book|podcast|channel) (\w+s|\w+ed) (that|how) /iu', '', $s, 1, $n);   // "This article argues that X" -> "X"; other openers are rejected and retried
     if ($n) $s = mb_strtoupper(mb_substr($s, 0, 1)) . mb_substr($s, 1);
     return (mb_strlen($s) < 20 || preg_match('/^(this|the) (web)?(page|video|article|post|site|website|book|podcast|channel)\b|^diese seite\b|\b(available|kaufen|disponibile|formats?|price|shipping|in stock|add to cart)\b/i', $s)) ? '' : $s;
 }
@@ -188,18 +188,21 @@ function suggest_external(PDO $pdo, string $url, array $c, array $names, array $
         . "\"summary\": \"Write 2-3 sentences (max 400 characters) on what this is about and what it offers or argues. Start with the substance, not with the medium: never say 'A YouTube video', 'A Wikipedia article', 'A web page', 'A website' or 'This article', since the site already shows that. "
         . "Lead with the topic or the main claim, not with who made it. Mention the author or channel only when they are the point (a famous author, an essay, a book) and then at most once, never as the sentence subject by default. Never write 'the video', 'the article' or 'the page' anywhere in the summary. "
         . "Name the form only when it adds information (an essay, a paper, a tutorial, a review, a novel). Examples: 'How a 10-foot stitch-and-glue dinghy rows, tows and sails, and how it was designed.', 'Federalist No. 10 (Madison) argues that a large republic best contains the danger of factions.', 'Speed-modelling a Scandinavian medieval house in Blender for game use.', 'The 1788 London panic over an unidentified attacker of women.' "
-        . "Describe only the actual content: never list or mention links, Patreon, Discord, newsletters, courses, sponsors, subscribe or follow requests, or other promotion. Always write a full sentence with a verb. "
+        . "Describe only the actual content: never list or mention links, Patreon, Discord, newsletters, courses, sponsors, subscribe or follow requests, or other promotion. Always write full sentences with a verb; skip spec sheets (dimensions, build time, skill level). "
         . "Not the website, availability, price, formats or shipping. Same language as the page. No marketing fluff.$extra\"}";
     $out = ['transient' => true];
-    foreach (['', " Begin directly with the subject; never start with 'This'."] as $i => $extra) {
+    $raw = '';
+    foreach (['', " Your summary must not start with 'This' or 'The page'. Make the subject of the page the grammatical subject, with a verb, e.g. 'The Pudel is a 4.9 m cutter designed for...' or 'Amazon has turned into...'."] as $i => $extra) {
         $p = openrouter_post($pdo, $ask($extra), 450);
         if (!isset($p['j'])) return $i ? $out : $p;
         $j = $p['j'];
         $out = ['tags' => normalize_tags((array)($j['tags'] ?? [])), 'new_tags' => normalize_tags((array)($j['new_tags'] ?? [])), 'category' => in_array($j['category'] ?? '', BM_CATEGORIES, true) ? $j['category'] : '',
                 'summary' => valid_summary((string)($j['summary'] ?? ''), $format), 'cost' => $p['cost'] + ($out['cost'] ?? 0)];
         if ($out['summary'] !== '') break;
+        $raw = $raw ?: clean_text(strip_tags((string)($j['summary'] ?? '')));
         error_log('openrouter: summary rejected: ' . mb_substr((string)($j['summary'] ?? ''), 0, 200));
     }
+    if (($out['summary'] ?? '') === '' && mb_strlen($raw) >= 20 && mb_strlen($raw) <= 450 && !isset($out['transient'])) $out['summary'] = $raw;   // last resort: a plain "This page..." beats a fragment or nothing
     return $out;
 }
 
