@@ -10,4 +10,4 @@ ExecStart=/usr/bin/php /srv/bookmarks/bin/worker.php
 Nice=10
 MemoryMax=200M
 MemorySwapMax=0
-TimeoutStartSec=300
+TimeoutStartSec=1800
