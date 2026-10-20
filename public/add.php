@@ -5,15 +5,21 @@ header('Cache-Control: no-store');
 require_once __DIR__ . '/../src/view.php';
 // JSON API for iOS/macOS Shortcuts etc.: add.php?format=json, params k (bookmarklet key), u (URL or text containing one), t (optional title)
 $in = $_GET + $_POST;
-if (stripos($_SERVER['CONTENT_TYPE'] ?? '', 'json') !== false) $in = (array)(json_decode((string)file_get_contents('php://input'), true) ?: []) + $in;
-if (($in['format'] ?? '') === 'json') {
+$ct = $_SERVER['CONTENT_TYPE'] ?? '';
+$body = trim((string)file_get_contents('php://input'));
+$jsonBody = $body !== '' && ($body[0] === '{' || stripos($ct, 'json') !== false);
+if ($jsonBody) $in = (array)(json_decode($body, true) ?: []) + $in;   // JSON body, with or without the header
+$wantsJson = $jsonBody || ($in['format'] ?? '') === 'json' || stripos($ct, 'json') !== false || stripos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') === 0
+    || preg_match('/Shortcuts|WorkflowKit|BackgroundShortcutRunner/i', $_SERVER['HTTP_USER_AGENT'] ?? '');
+if ($wantsJson) {
     header('Content-Type: application/json; charset=utf-8');
-    $out = function (int $code, array $body) { http_response_code($code); echo json_encode($body, JSON_UNESCAPED_UNICODE); exit; };
-    if (!($user = user_by_key((string)($in['k'] ?? '')))) $out(403, ['ok' => false, 'error' => 'Invalid key']);
-    $raw = trim((string)($in['u'] ?? ''));
+    $out = function (int $code, array $b) { http_response_code($code); echo json_encode($b, JSON_UNESCAPED_UNICODE); exit; };
+    $first = function ($v) use (&$first) { return is_array($v) ? $first(reset($v) ?: '') : (is_scalar($v) ? (string)$v : ''); };   // Shortcuts may send a URL object or an array
+    if (!($user = user_by_key($first($in['k'] ?? '')))) $out(403, ['ok' => false, 'error' => 'Invalid key']);
+    $raw = trim($first($in['u'] ?? ''));
     if ($raw === '') $out(400, ['ok' => false, 'error' => 'Missing u']);
     $url = extract_url($raw);
-    $t = trim((string)($in['t'] ?? ''));
+    $t = trim($first($in['t'] ?? ''));
     $res = $url === '' ? ['status' => 'invalid', 'error' => 'No URL found'] : add_bookmark((int)$user['id'], $url, $t);
     if ($res['status'] === 'invalid') $out(400, ['ok' => false, 'error' => $res['error']]);
     $out(200, ['ok' => true, 'status' => $res['status'] === 'added' ? 'saved' : 'duplicate', 'title' => $t !== '' ? $t : $url]);

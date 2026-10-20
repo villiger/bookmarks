@@ -30,7 +30,7 @@ $reqs = $user['is_admin'] ? (int)db()->query("SELECT COUNT(*) FROM users WHERE s
 <ol>
 <li>Shortcuts app: new Shortcut, name it <b>Save to Bookmarks</b>.</li>
 <li>Details: turn on <b>Show in Share Sheet</b>; accept <b>URLs</b>, <b>Safari web pages</b> and <b>Text</b>.</li>
-<li>Add <b>Get Contents of URL</b>: URL <code><?= h(base_url() . '/add.php') ?></code>, Method <b>POST</b>, Request Body <b>Form</b> with fields <code>k</code> = your key, <code>u</code> = <b>Shortcut Input</b>, <code>format</code> = <code>json</code>.</li>
+<li>Add <b>Get Contents of URL</b>: URL <code><?= h(base_url() . '/add.php') ?></code>, Method <b>POST</b>, Request Body <b>JSON</b> with <code>k</code> = your key (Text) and <code>u</code> = <b>Shortcut Input</b>. That is enough; <code>format</code> is optional (Form also works).</li>
 <li>Add <b>Get Dictionary Value</b> for <code>status</code>, then <b>Show Notification</b>: "Saved ✓ (status)".</li>
 </ol>
 <p>The Shortcut syncs to your Mac via iCloud and appears in Safari's Share menu there too. To share it, create an iCloud link with the key removed and add an Import Question for <code>k</code>.</p></details>
