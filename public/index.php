@@ -40,7 +40,7 @@ $reqs = $user['is_admin'] ? (int)db()->query("SELECT COUNT(*) FROM users WHERE s
 <p><a href="export.php" download>Export all bookmarks</a> (HTML, importable into Safari, Chrome and Firefox).</p>
 <form method="post" action="import.php" enctype="multipart/form-data" class="inline"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
 Import a bookmarks file (Safari: File ▸ Export ▸ Bookmarks): <input type="file" name="file" accept=".html,.htm" required> <button>Import</button></form></details></section>
-<section class="rows"><?php if ($user['is_admin']): ?><a href="admin.php">Users<?= $reqs ? " <span class=\"badge pending\">$reqs</span>" : '' ?></a><?php endif; ?>
+<section class="rows"><a href="trash.php">Recently deleted</a><?php if ($user['is_admin']): ?><a href="admin.php">Users<?= $reqs ? " <span class=\"badge pending\">$reqs</span>" : '' ?></a><?php endif; ?>
 <form method="post" action="logout.php"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><button class="rowbtn" title="<?= h($user['email']) ?>">Log out <small><?= h($user['email']) ?></small></button></form></section>
 </div></details></header>
 <form class="addurl" hx-post="add.php" hx-target="#results" hx-swap="afterbegin" hx-on:bm-added="this.reset()">

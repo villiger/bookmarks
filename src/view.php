@@ -101,3 +101,11 @@ function render_toast(?int $id = null): string {
     if ($id === null) return '<div id="toast" hx-swap-oob="true"></div>';
     return '<div id="toast" hx-swap-oob="true"><div class="toast">Bookmark deleted <button hx-post="restore.php" hx-vals=\'{"id":' . $id . '}\' hx-target="#results" hx-swap="afterbegin">Undo</button></div></div>';
 }
+
+/** One row of the trash page; $note replaces the buttons after an action. */
+function render_trash_row(array $t, string $note = ''): string {
+    $id = (int)$t['id'];
+    $act = fn($a, $label, $cls = '') => '<button class="' . $cls . '" hx-post="trash.php" hx-vals=\'{"id":' . $id . ',"action":"' . $a . '"}\' hx-target="#t' . $id . '" hx-swap="outerHTML"' . ($a === 'purge' ? ' hx-confirm="Delete forever? This cannot be undone."' : '') . '>' . $label . '</button>';
+    return '<article class="card trashrow" id="t' . $id . '"><div class="main"><h3>' . h($t['title']) . '</h3><div class="meta">' . h(domain_of($t['url'])) . ' · deleted ' . date('Y-m-d H:i', $t['deleted_at']) . '</div></div>'
+        . '<div class="rowacts">' . ($note !== '' ? '<span class="note">' . h($note) . '</span>' : $act('restore', 'Restore', 'primary') . $act('purge', 'Delete forever')) . '</div></article>';
+}

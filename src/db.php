@@ -54,10 +54,12 @@ function fts_reindex(int $id): void {
         ->execute([$id, $row['title'], trim($row['description'] . ' ' . $row['summary']), $row['body'], implode(' ', $tags), $row['url']]);
 }
 
-/** Delete a bookmark but keep a snapshot (row + tags) for a day so it can be restored. @return bool whether something was deleted */
+const TRASH_DAYS = 30;
+
+/** Delete a bookmark but keep a snapshot (row + tags) for TRASH_DAYS so it can be restored. @return bool whether something was deleted */
 function trash_bookmark(int $id, int $uid): bool {
     $pdo = db();
-    $pdo->exec('DELETE FROM trash WHERE deleted_at < ' . (time() - 86400));
+    $pdo->exec('DELETE FROM trash WHERE deleted_at < ' . (time() - 86400 * TRASH_DAYS));
     $st = $pdo->prepare('SELECT * FROM bookmarks WHERE id=? AND user_id=?'); $st->execute([$id, $uid]);
     if (!($row = $st->fetch(PDO::FETCH_ASSOC))) return false;
     $t = $pdo->prepare('SELECT tag, suggested FROM tags WHERE bookmark_id=?'); $t->execute([$id]);
@@ -181,4 +183,14 @@ function fetch_card(int $id, int $uid): ?array {
     $ok = established_tags($uid);
     foreach ($t as $x) { if (!$x['suggested']) $r['tags'][] = $x['tag']; elseif (isset($ok[$x['tag']])) $r['suggested'][] = $x['tag']; }
     return $r;
+}
+
+/** The user's trash, newest first: id, title, url, deleted_at. */
+function trash_list(int $uid): array {
+    $st = db()->prepare('SELECT id, data, deleted_at FROM trash WHERE user_id=? ORDER BY deleted_at DESC');
+    $st->execute([$uid]);
+    return array_map(function ($r) {
+        $b = (json_decode($r['data'], true)['row'] ?? []);
+        return ['id' => (int)$r['id'], 'title' => (string)(($b['title'] ?? '') ?: ($b['url'] ?? '')), 'url' => (string)($b['url'] ?? ''), 'deleted_at' => (int)$r['deleted_at']];
+    }, $st->fetchAll());
 }
