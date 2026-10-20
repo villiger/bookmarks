@@ -1,1 +1,2 @@
 * * * * * /usr/bin/php /srv/bookmarks/bin/worker.php >> /srv/bookmarks/data/worker.log 2>&1
+# villiger has no cron; it uses deploy/bookmarks-worker.{service,timer} instead (flock inside worker.php prevents overlap).

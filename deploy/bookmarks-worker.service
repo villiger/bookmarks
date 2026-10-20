@@ -1,0 +1,13 @@
+[Unit]
+Description=Bookmarks worker (crawl + tag pending bookmarks)
+
+[Service]
+Type=oneshot
+User=http
+Group=http
+WorkingDirectory=/srv/bookmarks
+ExecStart=/usr/bin/php /srv/bookmarks/bin/worker.php
+Nice=10
+MemoryMax=700M
+MemorySwapMax=0
+TimeoutStartSec=300
