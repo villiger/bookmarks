@@ -1,0 +1,10 @@
+# Format tags are deterministic (never from the LLM) and do not count toward the 3 topic tags.
+# tag | signal | signal ...   (any signal matches; "!tag" = only if that tag was not already set)
+# signals: type:SchemaOrgType  host:host[/path-prefix]  og:og-type-prefix  meta:meta-name-prefix  title:/regex/  url:/regex/  html:/regex/  isbn
+book | type:Book | type:Audiobook | isbn | host:goodreads.com/book | host:openlibrary.org | host:books.google. | title:/[:\-–]\s*(Books|Libri|Bücher|Livres|Libros|Kindle Store)\s*$/iu | html:/id="(tmmSwatches|formats)"[^>]*>[\s\S]{0,4000}(Kindle|Hardcover|Paperback|Copertina|Gebundene)/
+video | type:VideoObject | og:video. | host:youtube.com | host:youtu.be | host:vimeo.com
+podcast | type:PodcastEpisode | type:PodcastSeries | host:open.spotify.com/show | host:open.spotify.com/episode | host:podcasts.apple.com
+recipe | type:Recipe
+paper | type:ScholarlyArticle | host:arxiv.org | host:doi.org | url:/\.pdf($|\?)/i | meta:citation_title
+product | !book | type:Product
+repo | url:/^https?:\/\/(www\.)?(github\.com|gitlab\.com|codeberg\.org)\/[^\/]+\/[^\/]+\/?$/i

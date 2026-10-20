@@ -10,14 +10,8 @@ return [
     'smtp'         => ['host' => '', 'port' => 587, 'secure' => 'tls' /* tls|ssl|none */, 'user' => '', 'pass' => ''],
     'mail_log'     => __DIR__ . '/data/mail.log',
 
-    // Embeddings: multilingual-e5-small GGUF served by a short-lived llama-server during worker runs
-    'llama_server' => '/opt/llama.cpp/llama-server',
-    'embed_model'  => '/opt/models/multilingual-e5-small-Q8_0.gguf',
-    'embed_port'   => 8099,
-    'embed_threads'=> 2,
-    'embed_z'      => 2.0,    // vocabulary tags with z-score >= this (vs. all vocab similarities) count as candidates
     'youtube_api_key' => '',  // optional YouTube Data API v3 key (topicCategories); empty = skip
-    // Optional OpenRouter step for short/blocked pages (empty key = off). Never commit a real key.
+    // OpenRouter does the tagging and summaries (empty key = rules only). Never commit a real key.
     'openrouter_key'   => '',
     // First = primary, the rest are tried automatically on errors/429 (OpenRouter `models` fallback). Avoid :free variants.
     'openrouter_models' => ['google/gemini-2.5-flash-lite', 'mistralai/mistral-small-3.2-24b-instruct', 'meta-llama/llama-3.1-8b-instruct'],

@@ -38,3 +38,9 @@ animals: animals, pets, wildlife, dogs, cats, nature, zoo
 history: history, historical, ancient, war history, century, archaeology, biography
 art: art, painting, illustration, museum, photography, creative, drawing
 business: business, startup, marketing, company, management, entrepreneurship, sales
+book: book, novel, author, isbn, paperback, hardcover, kindle, publisher, read
+podcast: podcast, episode, show, listen, host interview
+recipe: recipe, ingredients, cooking steps, bake, dish
+paper: research paper, preprint, arxiv, journal, study, abstract, doi
+product: product, item for sale, buy now, price, brand, specifications
+repo: repository, source code, github, git, commits, readme

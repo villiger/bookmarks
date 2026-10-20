@@ -8,6 +8,6 @@ Group=http
 WorkingDirectory=/srv/bookmarks
 ExecStart=/usr/bin/php /srv/bookmarks/bin/worker.php
 Nice=10
-MemoryMax=700M
+MemoryMax=200M
 MemorySwapMax=0
 TimeoutStartSec=300

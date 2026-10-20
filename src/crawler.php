@@ -167,6 +167,10 @@ function crawl(string $url, bool $alt = false): array {
     elseif (mb_strtolower($out['description']) === mb_strtolower($out['title'])) $out['description'] = '';
     if ($sd['image'] && preg_match('~^https?://~i', $sd['image'])) $out['image'] = $sd['image'];
     $out['author'] = mb_substr($sd['author'], 0, 120);
+    $metas = [];
+    foreach ($xp->query('//meta[@name or @property]') as $m) $metas[] = strtolower($m->getAttribute('name') ?: $m->getAttribute('property'));
+    $out['signals'] = ['types' => array_values(array_unique($sd['types'])), 'og_type' => strtolower($og('og:type')), 'metas' => array_values(array_unique($metas)),
+        'isbn' => $sd['isbn'] || (bool)preg_match('/\bISBN(?:-1[03])?\s*[:#]?\s*(?:97[89][-\s]?)?\d[-\s\d]{8,15}[\dX]\b/i', substr($html, 0, 400000)), 'html' => substr($html, 0, 300000)];
     // main text
     foreach (['script', 'style', 'nav', 'header', 'footer', 'aside', 'noscript', 'svg', 'form', 'iframe', 'template'] as $tag) {
         foreach (iterator_to_array($doc->getElementsByTagName($tag)) as $n) $n->parentNode?->removeChild($n);
@@ -240,6 +244,7 @@ function crawl_resilient(array $b): array {
         if ($b['client_keywords']) $best['keywords'] = trim($best['keywords'] . ', ' . $b['client_keywords'], ', ');
     }
     if (!$best) throw $err ?? new RuntimeException('crawl failed');
+    $best += ['site_name' => '', 'author' => '', 'signals' => []];
     if (!$best['favicon'] || str_ends_with($best['favicon'], '/favicon.ico') && $src !== 'direct') {
         $best['favicon'] = 'https://www.google.com/s2/favicons?domain=' . rawurlencode(parse_url($b['url'], PHP_URL_HOST) ?: '') . '&sz=64';
     }
@@ -292,12 +297,13 @@ function prose_excerpt(string $body, int $max = 200): string {
 
 /** schema.org JSON-LD (Book/Product/Article/Video/Recipe...) first, then a small Amazon extractor. */
 function structured_data(DOMXPath $xp, string $host): array {
-    $o = ['title' => '', 'description' => '', 'image' => '', 'author' => ''];
+    $o = ['title' => '', 'description' => '', 'image' => '', 'author' => '', 'types' => [], 'isbn' => false];
     $str = fn($v) => is_array($v) ? (isset($v['name']) ? (string)$v['name'] : (isset($v['url']) ? (string)$v['url'] : (is_string(reset($v)) ? reset($v) : (string)(reset($v)['name'] ?? reset($v)['url'] ?? '')))) : (string)$v;
     foreach ($xp->query('//script[@type="application/ld+json"]') as $sc) {
         $j = json_decode(trim($sc->textContent), true);
         if (!is_array($j)) continue;
         foreach (isset($j['@graph']) ? $j['@graph'] : (array_is_list($j) ? $j : [$j]) as $it) {
+            if (is_array($it)) { $o['types'] = array_merge($o['types'], (array)($it['@type'] ?? [])); $o['isbn'] = $o['isbn'] || isset($it['isbn']); }
             if (!is_array($it) || !array_intersect((array)($it['@type'] ?? []), ['Book', 'Product', 'Article', 'NewsArticle', 'BlogPosting', 'VideoObject', 'Recipe', 'Movie', 'Course', 'SoftwareApplication', 'MusicRecording'])) continue;
             $o['title'] = $o['title'] ?: clean_text($str($it['name'] ?? $it['headline'] ?? ''));
             $o['description'] = $o['description'] ?: clean_text(strip_tags($str($it['description'] ?? '')));
@@ -305,6 +311,7 @@ function structured_data(DOMXPath $xp, string $host): array {
             $o['author'] = $o['author'] ?: clean_text($str($it['author'] ?? ''));
         }
     }
+    foreach ($xp->query('//*[@itemtype]') as $n) $o['types'][] = basename($n->getAttribute('itemtype'));
     if (preg_match('/(^|\.)amazon\./', $host)) {
         $q = fn($x) => ($n = $xp->query($x)->item(0)) ? clean_text($n->textContent) : '';
         $o['title'] = $q('//*[@id="productTitle"]') ?: $o['title'];

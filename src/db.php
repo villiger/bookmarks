@@ -21,12 +21,10 @@ function db(): PDO {
     if (!$has('tags', 'suggested')) $pdo->exec('ALTER TABLE tags ADD COLUMN suggested INTEGER NOT NULL DEFAULT 0');
     if (!$has('bookmarks', 'url_key')) $pdo->exec("ALTER TABLE bookmarks ADD COLUMN url_key TEXT NOT NULL DEFAULT ''");
     if (!$has('bookmarks', 'scheme_guessed')) $pdo->exec('ALTER TABLE bookmarks ADD COLUMN scheme_guessed INTEGER NOT NULL DEFAULT 0');
-    if (!$has('bookmarks', 'embedding')) $pdo->exec('ALTER TABLE bookmarks ADD COLUMN embedding BLOB');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS tag_vec (tag TEXT PRIMARY KEY, h TEXT NOT NULL, vec BLOB NOT NULL)');
     foreach (['title_orig', 'summary', 'client_title', 'client_desc', 'client_image', 'client_favicon', 'client_canonical', 'client_keywords', 'client_text', 'crawl_source'] as $col) {
         if (!$has('bookmarks', $col)) $pdo->exec("ALTER TABLE bookmarks ADD COLUMN $col TEXT");
     }
-    foreach (['llm_pending', 'llm_attempts', 'llm_next_at'] as $col) {
+    foreach (['llm_pending', 'llm_attempts', 'llm_next_at', 'refresh'] as $col) {
         if (!$has('bookmarks', $col)) $pdo->exec("ALTER TABLE bookmarks ADD COLUMN $col INTEGER NOT NULL DEFAULT 0");
     }
     $pdo->exec('CREATE TABLE IF NOT EXISTS api_model_usage (month TEXT NOT NULL, model TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (month, model))');

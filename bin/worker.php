@@ -1,9 +1,8 @@
 #!/usr/bin/env php
 <?php
-// Cron: * * * * * flock-protected; processes pending bookmarks one at a time.
+// Run every minute (systemd timer / cron); flock-protected. Crawls and tags pending bookmarks, then retries deferred OpenRouter steps.
 if (PHP_SAPI !== 'cli') exit(1);
 require_once __DIR__ . '/../src/db.php';
-require_once __DIR__ . '/../src/crawler.php';
 require_once __DIR__ . '/../src/tagger.php';
 
 $lock = fopen(cfg('lock_path'), 'c');
@@ -11,7 +10,6 @@ if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) exit(0);   // another worker is 
 
 $pdo = db();
 $max = (int)(cfg('max_attempts') ?: 3);
-$only = $argv[1] ?? null;   // optional: bin/worker.php <id> to force a single bookmark
 
 while (true) {
     $st = $pdo->prepare("SELECT * FROM bookmarks WHERE status='pending' AND attempts < ? ORDER BY id LIMIT 1");
@@ -24,7 +22,6 @@ while (true) {
     $t0 = microtime(true);
     try {
         [$c, $src] = crawl_resilient($b);
-        $c['source'] = $src;
         // Final URL after redirects, cleaned; merge into an existing bookmark if it's a duplicate
         $finalUrl = clean_url($c['final_url'] ?? $b['url']);
         $finalKey = url_key($finalUrl);
@@ -33,20 +30,20 @@ while (true) {
         if ($dup->fetchColumn()) { delete_bookmark($id, (int)$b['user_id']); echo date('c') . " merged #$id into existing {$finalUrl}\n"; continue; }
         $titleOrig = $c['title'] ?: $b['title'] ?: $b['url'];
         $title = clean_title($titleOrig, $finalUrl, (string)$c['site_name']);
-        $desc = $c['description'];
-        $vocab = vocab($pdo, (int)$b['user_id']);
-        $r = tag_bookmark($finalUrl, $c, $vocab, $pdo, (int)$b['user_id']);
+        $r = tag_bookmark($finalUrl, $c, vocab($pdo, (int)$b['user_id']), $pdo, (int)$b['user_id']);
         $pdo->beginTransaction();
-        $pdo->prepare("UPDATE bookmarks SET title=?, title_orig=?, description=?, summary=?, favicon=?, image=?, body=?, category=?, status='done', error=NULL, crawl_source=?, embedding=?, url=?, url_key=?, scheme_guessed=0 WHERE id=?")
-            ->execute([$title, $titleOrig, $desc, $r['summary'], $c['favicon'], $c['image'], $c['body'], $r['category'], $src, $r['embedding'], $finalUrl, $finalKey, $id]);
-        if (!$b['tags_edited']) {      // never overwrite tags the user corrected
+        $pdo->prepare("UPDATE bookmarks SET title=?, title_orig=?, description=?, summary=?, favicon=?, image=?, body=?, category=?, status='done', error=NULL, crawl_source=?, url=?, url_key=?, scheme_guessed=0 WHERE id=?")
+            ->execute([$title, $titleOrig, $c['description'], $r['summary'], $c['favicon'], $c['image'], $c['body'], $r['category'], $src, $finalUrl, $finalKey, $id]);
+        // Tags: replaced on every re-process, except bookmarks the user corrected: those are untouched, or (refresh=1) keep their applied tags and get the new ones on top.
+        if (!$b['tags_edited'] || $b['refresh']) {
+            $cur = $b['tags_edited'] ? array_column($pdo->query("SELECT tag FROM tags WHERE bookmark_id=$id AND suggested=0")->fetchAll(), 'tag') : [];
             $pdo->prepare('DELETE FROM tags WHERE bookmark_id=?')->execute([$id]);
             $ins = $pdo->prepare('INSERT OR IGNORE INTO tags(bookmark_id, tag, suggested) VALUES(?,?,?)');
-            foreach ($r['tags'] as $t) $ins->execute([$id, $t, 0]);
-            foreach ($r['suggested'] as $t) $ins->execute([$id, $t, 1]);
+            foreach (array_merge($r['tags'], $cur) as $t) $ins->execute([$id, $t, 0]);
+            foreach (array_diff($r['suggested'], $cur) as $t) $ins->execute([$id, $t, 1]);
         }
-        if ($r['llm_pending']) $pdo->prepare('UPDATE bookmarks SET llm_pending=1, llm_attempts=1, llm_next_at=? WHERE id=?')->execute([time() + llm_backoff(1), $id]);
-        else $pdo->prepare('UPDATE bookmarks SET llm_pending=0 WHERE id=?')->execute([$id]);
+        $pdo->prepare('UPDATE bookmarks SET llm_pending=?, llm_attempts=?, llm_next_at=?, refresh=? WHERE id=?')
+            ->execute([(int)$r['llm_pending'], (int)$r['llm_pending'], time() + ($r['llm_pending'] ? llm_backoff(1) : 0), (int)($r['llm_pending'] && $b['refresh']), $id]);
         $pdo->commit();
         fts_reindex($id);
         echo date('c') . " done #$id {$b['url']} [" . implode(',', $r['tags']) . "] {$r['category']} +" . implode(',', $r['suggested']) . " [$src" . ($r['api'] ? ',api' : '') . '] ' . round(microtime(true) - $t0, 1) . "s\n";
@@ -58,10 +55,10 @@ while (true) {
     }
 }
 
-// Deferred OpenRouter step: up to 5 due bookmarks per run (local tags are already in place)
+// Deferred OpenRouter step (rate limit / outage earlier): up to 5 due bookmarks per run, with backoff
 $due = $pdo->prepare("SELECT * FROM bookmarks WHERE llm_pending=1 AND llm_next_at<=? AND status='done' ORDER BY llm_next_at LIMIT 5");
 $due->execute([time()]);
 foreach ($due->fetchAll() as $b) {
-    try { $res = llm_retry($pdo, $b, vocab($pdo, (int)$b['user_id'])); } catch (Throwable $e) { $res = 'error: ' . $e->getMessage(); }
-    echo date('c') . " llm #{$b['id']} {$b['url']} -> $res\n";
+    try { $r = llm_retry($pdo, $b, vocab($pdo, (int)$b['user_id'])); } catch (Throwable $e) { $r = 'error: ' . $e->getMessage(); }
+    echo date('c') . " llm #{$b['id']} {$b['url']} -> $r\n";
 }

@@ -35,3 +35,4 @@ form.inline{display:inline}.linkbtn{border:0;background:none;color:var(--ac);cur
 .tag.sugg{opacity:.55;border-style:dashed}.tag.sugg:hover{opacity:1}.tag.sugg .acc{padding:0;color:var(--fg)}
 .addtag{display:inline}.addtag input{width:70px;font-size:12px;padding:2px 6px;border:1px dashed var(--bd);border-radius:99px;background:transparent;color:var(--fg)}
 .llm{color:var(--mut);margin-left:6px;letter-spacing:1px}
+.desc{display:-webkit-box;-webkit-line-clamp:3;line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
