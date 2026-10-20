@@ -61,5 +61,11 @@ Import a bookmarks file (Safari: File ▸ Export ▸ Bookmarks): <input type="fi
 <div id="results"><?= render_results($uid, $q, $tag, '', $seed) ?></div>
 
 <script>if(matchMedia("(hover:hover)").matches&&!location.search)document.querySelector("[name=q]").focus()</script>
+<script>
+/* "+" on a card: first press reveals the tag field and focuses it; with a value it submits; empty again it closes. */
+function bmAddTag(b){var f=b.form,i=f.querySelector('input[name=tag]');if(!f.classList.contains('open')){f.classList.add('open');i.focus();return false}if(i.value.trim()===''){f.classList.remove('open');i.blur();return false}return true}
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&e.target.matches&&e.target.matches('.addtag input')){e.target.value='';e.target.form.classList.remove('open')}});
+document.addEventListener('focusout',function(e){var f=e.target.closest&&e.target.closest('.addtag');if(f&&e.target.matches('input')&&e.target.value.trim()===''){setTimeout(function(){if(!f.contains(document.activeElement))f.classList.remove('open')},150)}});
+</script>
 <script>document.addEventListener('click',function(e){var c=e.target.closest('.card');if(!c||!c.querySelector('.acts')||e.target.closest('a,button,input,textarea,select,form'))return;if(!matchMedia('(hover:none),(max-width:600px)').matches)return;var o=c.classList.contains('open');document.querySelectorAll('.card.open').forEach(function(x){x.classList.remove('open')});if(!o)c.classList.add('open')})</script>
 </body></html>

@@ -68,7 +68,7 @@ function render_tags(array $r): string {
             . '<button class="x" title="Dismiss" hx-post="tag.php"' . $vals('remove', $t) . $tgt . '>×</button></span>';
     }
     $o .= '<form class="addtag" hx-post="tag.php"' . $tgt . '><input type="hidden" name="id" value="' . $id . '"><input type="hidden" name="action" value="add">'
-        . '<input name="tag" list="vocab" maxlength="24" placeholder="+ tag" autocomplete="off" enterkeyhint="done" required><button type="submit" class="addbtn" title="Add tag" aria-label="Add tag">＋</button></form></div>';
+        . '<input name="tag" list="vocab" maxlength="24" placeholder="+ tag" autocomplete="off" enterkeyhint="done" required><button type="submit" class="addbtn" title="Add tag" aria-label="Add tag" onclick="return bmAddTag(this)">＋</button></form></div>';
     return $o;
 }
 

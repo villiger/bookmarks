@@ -72,7 +72,7 @@ form.inline{display:inline}
 .tag .x,.tag .acc{border:0;background:none;color:var(--mut);padding:0 0 0 6px;font-size:13px;line-height:1}.tag .x:hover{color:var(--danger)}
 .tag.sugg{background:none;border-style:dashed;color:var(--mut)}.tag.sugg .acc{padding:0;color:inherit}.tag.sugg:hover{color:var(--fg);border-color:var(--ac)}
 .addtag{display:inline-flex;align-items:center;gap:4px}
-.addtag input{width:76px;font-size:12.5px;padding:5px 9px;border:1px dashed var(--bd2);border-radius:99px;background:transparent;outline:0}.addtag input:focus{border-color:var(--ac);width:110px}
+.addtag input[name=tag]{display:none;width:110px;font-size:12.5px;padding:5px 9px;border:1px dashed var(--ac);border-radius:99px;background:transparent;outline:0}.addtag.open input[name=tag]{display:block}
 .addbtn{border:1px dashed var(--bd2);background:transparent;color:var(--mut);border-radius:99px;font-size:13px;line-height:1;padding:5px 9px}.addbtn:hover{color:var(--ac);border-color:var(--ac)}
 
 /* ---- cards ---- */
@@ -128,12 +128,12 @@ header:not(.top){display:flex;align-items:baseline;gap:12px;margin-bottom:12px}h
   .acts{position:static;flex-direction:row;justify-content:flex-end;width:100%;border-top:1px solid var(--bd);padding-top:6px;opacity:1}
   .acts button{width:44px;height:40px}
   .tag{font-size:13px;padding:6px 11px}.tag .x,.tag .acc{min-height:20px;padding-left:8px}
-  .addtag input{width:92px;padding:6px 10px}.addbtn{min-height:30px;min-width:38px;font-size:16px}
+  .addtag input[name=tag]{width:120px;padding:6px 10px}.addbtn{min-height:30px;min-width:38px;font-size:16px}
   .addurl button{min-height:44px}.editform button{min-height:44px}
   .login{margin-top:10vh;padding:22px}
 }
 /* touch: the action buttons appear when a card is tapped */
-@media(hover:none),(max-width:600px){.acts{display:none;opacity:1}.card.open .acts{display:flex}.card:has(.acts){cursor:pointer}.card.open{border-color:var(--bd2);box-shadow:var(--sh2)}}
+@media(hover:none),(max-width:600px){.acts{display:none;opacity:1}.card.open .acts{display:flex}.card:not(.open) .addtag,.card:not(.open) .tag .x{display:none}.card:has(.acts){cursor:pointer}.card.open{border-color:var(--bd2);box-shadow:var(--sh2)}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 
 /* ---- toast (undo delete) ---- */
