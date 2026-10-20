@@ -59,5 +59,5 @@ Import a bookmarks file (Safari: File ▸ Export ▸ Bookmarks): <input type="fi
 <div id="toast"></div>
 <div id="results"><?= render_results($uid, $q, $tag) ?></div>
 
-<script>if(matchMedia("(hover:hover)").matches&&!location.search)document.querySelector(".addurl input").focus()</script>
+<script>if(matchMedia("(hover:hover)").matches&&!location.search)document.querySelector("[name=q]").focus()</script>
 </body></html>
