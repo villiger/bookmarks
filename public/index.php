@@ -24,6 +24,16 @@ $reqs = $user['is_admin'] ? (int)db()->query("SELECT COUNT(*) FROM users WHERE s
 <p><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('bmjs').value);this.textContent='Copied'">Copy</button>
 <input id="bmjs" type="text" readonly value="<?= h($js) ?>" style="width:60%">
 <form method="post" action="regenerate.php" class="inline" onsubmit="return confirm('The old bookmarklet will stop working. Continue?')"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><button>Regenerate key</button></form></p></details>
+<details class="bmbox"><summary>iOS / macOS share sheet</summary>
+<p>Key: <input type="text" readonly value="<?= h($user['bookmarklet_key']) ?>" id="bmkey" style="width:60%"> <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('bmkey').value);this.textContent='Copied'">Copy</button></p>
+<p>Endpoint: <code><?= h(base_url() . '/add.php') ?></code> (POST or GET, <code>format=json</code>)</p>
+<ol>
+<li>Shortcuts app: new Shortcut, name it <b>Save to Bookmarks</b>.</li>
+<li>Details: turn on <b>Show in Share Sheet</b>; accept <b>URLs</b>, <b>Safari web pages</b> and <b>Text</b>.</li>
+<li>Add <b>Get Contents of URL</b>: URL <code><?= h(base_url() . '/add.php') ?></code>, Method <b>POST</b>, Request Body <b>Form</b> with fields <code>k</code> = your key, <code>u</code> = <b>Shortcut Input</b>, <code>format</code> = <code>json</code>.</li>
+<li>Add <b>Get Dictionary Value</b> for <code>status</code>, then <b>Show Notification</b>: "Saved ✓ (status)".</li>
+</ol>
+<p>The Shortcut syncs to your Mac via iCloud and appears in Safari's Share menu there too. To share it, create an iCloud link with the key removed and add an Import Question for <code>k</code>.</p></details>
 <form class="addurl" hx-post="add.php" hx-target="#results" hx-swap="afterbegin" hx-on:bm-added="this.reset()">
 <input type="text" name="urls" placeholder="example.com or https://…" required autocomplete="off" autocapitalize="off" spellcheck="false"><button type="submit">Save</button></form>
 <div id="addmsg" class="err"></div>

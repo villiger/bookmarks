@@ -3,6 +3,21 @@ require_once __DIR__ . '/../src/auth.php';
 header('Referrer-Policy: no-referrer');
 header('Cache-Control: no-store');
 require_once __DIR__ . '/../src/view.php';
+// JSON API for iOS/macOS Shortcuts etc.: add.php?format=json, params k (bookmarklet key), u (URL or text containing one), t (optional title)
+$in = $_GET + $_POST;
+if (stripos($_SERVER['CONTENT_TYPE'] ?? '', 'json') !== false) $in = (array)(json_decode((string)file_get_contents('php://input'), true) ?: []) + $in;
+if (($in['format'] ?? '') === 'json') {
+    header('Content-Type: application/json; charset=utf-8');
+    $out = function (int $code, array $body) { http_response_code($code); echo json_encode($body, JSON_UNESCAPED_UNICODE); exit; };
+    if (!($user = user_by_key((string)($in['k'] ?? '')))) $out(403, ['ok' => false, 'error' => 'Invalid key']);
+    $raw = trim((string)($in['u'] ?? ''));
+    if ($raw === '') $out(400, ['ok' => false, 'error' => 'Missing u']);
+    $url = extract_url($raw);
+    $t = trim((string)($in['t'] ?? ''));
+    $res = $url === '' ? ['status' => 'invalid', 'error' => 'No URL found'] : add_bookmark((int)$user['id'], $url, $t);
+    if ($res['status'] === 'invalid') $out(400, ['ok' => false, 'error' => $res['error']]);
+    $out(200, ['ok' => true, 'status' => $res['status'] === 'added' ? 'saved' : 'duplicate', 'title' => $t !== '' ? $t : $url]);
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {          // UI form (htmx), session + CSRF
     $user = require_login(true);
     check_csrf();
@@ -23,13 +38,7 @@ $u = trim((string)($_GET['u'] ?? ''));
 $t = trim((string)($_GET['t'] ?? ''));
 $msg = 'Saved ✓'; $code = 200;
 // Auth: valid session, or a per-user bookmarklet key.
-$user = current_user();
-if (!$user && preg_match('/^[0-9a-f]{64}$/', $k)) {
-    $st = db()->prepare("SELECT * FROM users WHERE bookmarklet_key=? AND status='active'");
-    $st->execute([$k]);
-    $row = $st->fetch();
-    if ($row && hash_equals($row['bookmarklet_key'], $k)) $user = $row;
-}
+$user = current_user() ?: user_by_key($k);
 if (!$user) { $msg = 'Forbidden'; $code = 403; }
 else {
     $client = ['client_title' => $t, 'client_desc' => $_GET['d'] ?? '', 'client_image' => $_GET['i'] ?? '', 'client_favicon' => $_GET['f'] ?? '',

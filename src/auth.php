@@ -102,3 +102,19 @@ function check_csrf(): void {
     $t = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($_POST['csrf'] ?? '');
     if (!is_string($t) || !hash_equals(csrf_token(), $t)) { http_response_code(403); exit('Bad CSRF token'); }
 }
+
+/** Active user owning this bookmarklet key, or null. */
+function user_by_key(string $k): ?array {
+    if (!preg_match('/^[0-9a-f]{64}$/', $k)) return null;
+    $st = db()->prepare("SELECT * FROM users WHERE bookmarklet_key=? AND status='active'");
+    $st->execute([$k]);
+    $row = $st->fetch();
+    return ($row && hash_equals($row['bookmarklet_key'], $k)) ? $row : null;
+}
+
+/** First http(s) URL or bare domain in a text such as "Some title https://example.com/x" (iOS share sheet). */
+function extract_url(string $text): string {
+    if (preg_match('~https?://[^\s<>"\']+~i', $text, $m)) return rtrim($m[0], '.,;:!?)]}');
+    if (preg_match('~(?<![\w@.-])((?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s<>"\']*)?)~i', $text, $m)) return rtrim($m[1], '.,;:!?)]}');
+    return '';
+}
