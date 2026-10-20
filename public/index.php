@@ -13,7 +13,7 @@ $reqs = $user['is_admin'] ? (int)db()->query("SELECT COUNT(*) FROM users WHERE s
 ?><!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#141416" media="(prefers-color-scheme: dark)">
 <meta name="robots" content="noindex"><title>Bookmarks</title><link rel="stylesheet" href="style.css">
-<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+<script src="htmx.min.js"></script>
 </head><body hx-headers='<?= h(json_encode(["X-CSRF-Token" => csrf_token()])) ?>'>
 <header class="top"><a class="brand" href="./"><span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg></span>Bookmarks</a>
 <span class="count"><?= (int)$count ?> saved<?= $pending ? " · " . (int)$pending . " processing" : "" ?></span>

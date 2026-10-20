@@ -3,33 +3,59 @@ const BM_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like G
 const BM_UA_ALT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 const BM_MAX_BYTES = 2000000;
 
-/** @return array{body:string,url:string,type:string,code:int,error:?string} */
+/** Public IPs of a host (empty = unresolvable or any private/loopback/link-local/reserved address): the crawler must never reach the server's own network. */
+function public_ips(string $host): array {
+    $host = trim($host, '[]');
+    $ips = filter_var($host, FILTER_VALIDATE_IP) ? [$host]
+        : array_merge(@gethostbynamel($host) ?: [], array_column(@dns_get_record($host, DNS_AAAA) ?: [], 'ipv6'));
+    if (!$ips) return [];
+    foreach ($ips as $ip) {
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)
+            || (str_contains($ip, '.') && (ip2long($ip) & 0xFFC00000) === 0x64400000)) return [];   // also 100.64.0.0/10 (CGNAT)
+    }
+    return $ips;
+}
+
+/**
+ * GET with manual redirects: every hop must be http(s) on a normal port and resolve only to public addresses (SSRF guard); the checked IP is pinned for the request (no DNS rebinding).
+ * @return array{body:string,url:string,type:string,code:int,error:?string}
+ */
 function http_get(string $url, int $timeout = 10, bool $alt = false): array {
-    $body = '';
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 5,
-        CURLOPT_CONNECTTIMEOUT => $timeout, CURLOPT_TIMEOUT => $timeout,
-        CURLOPT_USERAGENT => $alt ? BM_UA_ALT : BM_UA, CURLOPT_ENCODING => '',
-        CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
-        CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
-        CURLOPT_HTTPHEADER => $alt
-            ? ['Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8', 'Accept-Language: en-US,en;q=0.9,de;q=0.8', 'Upgrade-Insecure-Requests: 1', 'Sec-Fetch-Dest: document', 'Sec-Fetch-Mode: navigate', 'Sec-Fetch-Site: none']
-            : ['Accept: text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5', 'Accept-Language: en,de;q=0.8'],
-        CURLOPT_WRITEFUNCTION => function ($ch, $data) use (&$body) {
-            $body .= $data;
-            return strlen($body) > BM_MAX_BYTES ? -1 : strlen($data);   // abort when too large
-        },
-    ]);
-    $ok = curl_exec($ch);
-    $err = $ok ? null : curl_error($ch);
-    $truncated = strlen($body) > BM_MAX_BYTES;
-    if ($truncated) { $err = null; $body = substr($body, 0, BM_MAX_BYTES); }
-    $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    $res = ['body' => $body, 'url' => curl_getinfo($ch, CURLINFO_EFFECTIVE_URL) ?: $url,
-            'type' => (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE), 'code' => $code, 'error' => $err];
-    if (!$res['error'] && $code >= 400) $res['error'] = "HTTP $code";
-    return $res;
+    for ($hop = 0; ; $hop++) {
+        $p = parse_url($url);
+        $scheme = strtolower($p['scheme'] ?? ''); $host = $p['host'] ?? ''; $port = $p['port'] ?? ($scheme === 'https' ? 443 : 80);
+        if (!in_array($scheme, ['http', 'https'], true) || $host === '' || !in_array($port, [80, 443, 8080, 8443], true)) return ['body' => '', 'url' => $url, 'type' => '', 'code' => 0, 'error' => 'URL not allowed'];
+        if (!($ips = public_ips($host))) return ['body' => '', 'url' => $url, 'type' => '', 'code' => 0, 'error' => 'Host not reachable (not public)'];
+        $body = ''; $location = '';
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_FOLLOWLOCATION => false, CURLOPT_RESOLVE => ["$host:$port:" . (str_contains($ips[0], ':') ? "[{$ips[0]}]" : $ips[0])],
+            CURLOPT_CONNECTTIMEOUT => $timeout, CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_USERAGENT => $alt ? BM_UA_ALT : BM_UA, CURLOPT_ENCODING => '',
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_HTTPHEADER => $alt
+                ? ['Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8', 'Accept-Language: en-US,en;q=0.9,de;q=0.8', 'Upgrade-Insecure-Requests: 1', 'Sec-Fetch-Dest: document', 'Sec-Fetch-Mode: navigate', 'Sec-Fetch-Site: none']
+                : ['Accept: text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5', 'Accept-Language: en,de;q=0.8'],
+            CURLOPT_HEADERFUNCTION => function ($ch, $line) use (&$location) {
+                if (stripos($line, 'location:') === 0) $location = trim(substr($line, 9));
+                return strlen($line);
+            },
+            CURLOPT_WRITEFUNCTION => function ($ch, $data) use (&$body) {
+                $body .= $data;
+                return strlen($body) > BM_MAX_BYTES ? -1 : strlen($data);   // abort when too large
+            },
+        ]);
+        $ok = curl_exec($ch);
+        $err = $ok ? null : curl_error($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $type = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        if ($ok && $code >= 300 && $code < 400 && $location !== '' && $hop < 5) { $url = resolve_url($location, $url) ?: $location; continue; }
+        $truncated = strlen($body) > BM_MAX_BYTES;
+        if ($truncated) { $err = null; $body = substr($body, 0, BM_MAX_BYTES); }
+        $res = ['body' => $body, 'url' => $url, 'type' => $type, 'code' => $code, 'error' => $err];
+        if (!$res['error'] && $code >= 400) $res['error'] = "HTTP $code";
+        return $res;
+    }
 }
 
 function resolve_url(string $href, string $base): string {

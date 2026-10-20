@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {          // htmx: replaces the row
 }
 $items = trash_list($uid);
 page_head('Recently deleted'); ?>
-<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+<script src="htmx.min.js"></script>
 <div hx-headers='<?= h(json_encode(["X-CSRF-Token" => csrf_token()])) ?>'>
 <header><h1>Recently deleted</h1><a href="./">← Bookmarks</a></header>
 <p class="note">Deleted bookmarks are kept for <?= TRASH_DAYS ?> days.</p>

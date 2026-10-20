@@ -43,8 +43,8 @@ $k = (string)($_GET['k'] ?? '');
 $u = trim((string)($_GET['u'] ?? ''));
 $t = trim((string)($_GET['t'] ?? ''));
 $msg = 'Saved ✓'; $code = 200;
-// Auth: valid session, or a per-user bookmarklet key.
-$user = current_user() ?: user_by_key($k);
+// Auth: per-user bookmarklet key only. A session cookie must not authorize a GET (any other site could trigger it); the UI form uses POST + CSRF.
+$user = user_by_key($k);
 if (!$user) { $msg = 'Forbidden'; $code = 403; }
 else {
     $client = ['client_title' => $t, 'client_desc' => $_GET['d'] ?? '', 'client_image' => $_GET['i'] ?? '', 'client_favicon' => $_GET['f'] ?? '',
