@@ -34,3 +34,4 @@ form.inline{display:inline}.linkbtn{border:0;background:none;color:var(--ac);cur
 .tag .x,.tag .acc{border:0;background:none;color:var(--mut);cursor:pointer;font:inherit;padding:0 0 0 4px}.tag .x:hover{color:#d33}
 .tag.sugg{opacity:.55;border-style:dashed}.tag.sugg:hover{opacity:1}.tag.sugg .acc{padding:0;color:var(--fg)}
 .addtag{display:inline}.addtag input{width:70px;font-size:12px;padding:2px 6px;border:1px dashed var(--bd);border-radius:99px;background:transparent;color:var(--fg)}
+.llm{color:var(--mut);margin-left:6px;letter-spacing:1px}

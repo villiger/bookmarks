@@ -26,6 +26,9 @@ function db(): PDO {
     foreach (['client_title', 'client_desc', 'client_image', 'client_favicon', 'client_canonical', 'client_keywords', 'client_text', 'crawl_source'] as $col) {
         if (!$has('bookmarks', $col)) $pdo->exec("ALTER TABLE bookmarks ADD COLUMN $col TEXT");
     }
+    foreach (['llm_pending', 'llm_attempts', 'llm_next_at'] as $col) {
+        if (!$has('bookmarks', $col)) $pdo->exec("ALTER TABLE bookmarks ADD COLUMN $col INTEGER NOT NULL DEFAULT 0");
+    }
     $pdo->exec('CREATE TABLE IF NOT EXISTS api_usage (month TEXT PRIMARY KEY, calls INTEGER NOT NULL DEFAULT 0)');
     foreach ($pdo->query("SELECT id, url FROM bookmarks WHERE url_key=''")->fetchAll() as $r) {
         $pdo->prepare('UPDATE bookmarks SET url_key=? WHERE id=?')->execute([url_key($r['url']), $r['id']]);

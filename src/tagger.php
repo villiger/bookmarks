@@ -196,13 +196,16 @@ function suggest_external(PDO $pdo, string $url, array $c, array $names): array 
         . "\nText: " . mb_substr($c['body'], 0, 1000) . "\nVocabulary: " . implode(', ', array_diff($names, BM_FORMAT_TAGS))
         . "\nReply with JSON only: {\"tags\": [2 to 5 tags chosen ONLY from the vocabulary; include only tags that clearly apply], \"new_tags\": [0 to 3 specific new lowercase tags of 1-2 words that are not in the vocabulary], \"summary\": \""
         . ($c['description'] === '' ? 'one sentence about the page' : '') . "\"}";
-    $ch = curl_init('https://openrouter.ai/api/v1/chat/completions');
+    $ch = curl_init(cfg('openrouter_url') ?: 'https://openrouter.ai/api/v1/chat/completions');
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_POST => true,
         CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $key, 'Content-Type: application/json', 'HTTP-Referer: ' . (cfg('base_url') ?: 'https://localhost'), 'X-Title: Bookmarks'],
         CURLOPT_POSTFIELDS => json_encode(['model' => cfg('openrouter_model') ?: 'google/gemini-2.5-flash-lite', 'temperature' => 0.2, 'max_tokens' => 300,
             'response_format' => ['type' => 'json_object'], 'messages' => [['role' => 'system', 'content' => 'You tag and summarize bookmarks. Reply with JSON only.'], ['role' => 'user', 'content' => $prompt]]])]);
-    $r = json_decode((string)curl_exec($ch), true);
-    for ($i = 1; $i <= 2 && ($r['error']['code'] ?? 0) == 429; $i++) { sleep(3 * $i); $r = json_decode((string)curl_exec($ch), true); }   // upstream rate limit: retry twice
+    $raw = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $r = json_decode((string)$raw, true);
+    $ec = (int)($r['error']['code'] ?? 0);
+    if ($raw === false || $code == 429 || $code >= 500 || $ec == 429 || $ec >= 500) { error_log('openrouter: transient failure (http ' . $code . '), will retry later'); return ['transient' => true]; }
     $j = json_decode((string)($r['choices'][0]['message']['content'] ?? ''), true);
     if (!is_array($j)) { error_log('openrouter: failed ' . substr(json_encode($r['error'] ?? curl_error($ch)), 0, 160)); return []; }
     $u = $r['usage'] ?? [];
@@ -210,9 +213,70 @@ function suggest_external(PDO $pdo, string $url, array $c, array $names): array 
             'cost' => ($u['prompt_tokens'] ?? 0) * (float)(cfg('openrouter_price_in') ?: 1e-7) + ($u['completion_tokens'] ?? 0) * (float)(cfg('openrouter_price_out') ?: 4e-7)];
 }
 
+/** z-score of the similarity between a page vector and every vocabulary tag description. */
+function vocab_z(PDO $pdo, array $vocab, array $vec): array {
+    $sims = [];
+    foreach (vocab_vectors($pdo, $vocab) as $t => $v) $sims[$t] = dot($vec, $v);
+    $mean = array_sum($sims) / count($sims);
+    $std = sqrt(array_sum(array_map(fn($s) => ($s - $mean) ** 2, $sims)) / count($sims)) ?: 1;
+    return array_map(fn($s) => ($s - $mean) / $std, $sims);
+}
+
+/** New-tag candidates that are not (stems of) vocabulary tags, not channel/host names. */
+function novel_tags(array $cands, array $names, string $channel, string $url): array {
+    $skip = preg_replace('/[^a-z0-9]/', '', mb_strtolower($channel . host_of($url)));
+    return array_values(array_filter($cands, fn($p) => mb_strlen($p) <= 24 && !preg_match('/^\d/', $p) && !in_array($p, $names, true)
+        && !array_filter($names, fn($n) => mb_strlen($n) >= 5 && mb_substr($n, 0, 5) === mb_substr($p, 0, 5)) && !str_contains($skip, preg_replace('/[^a-z0-9]/', '', $p))));
+}
+
+/** The model over-tags: a vocabulary pick is applied only if the embedding also ranks it in its top 10, otherwise it is just suggested. */
+function merge_external(array $x, array $names, array $z, array $applied, array $sugg, string $channel, string $url): array {
+    arsort($z); $top = array_slice(array_keys($z), 0, 10);
+    foreach ($x['tags'] ?? [] as $t) {
+        if (!in_array($t, $names, true) || in_array($t, BM_FORMAT_TAGS, true)) continue;
+        if (in_array($t, $top, true) || in_array($t, $applied, true)) $applied[] = $t; else $sugg[] = $t;
+    }
+    return [array_slice(array_values(array_unique($applied)), 0, BM_MAX), array_merge(novel_tags($x['new_tags'] ?? [], $names, $channel, $url), $sugg)];
+}
+
+/** Seconds until the next deferred OpenRouter attempt after `$attempts` failures; null = give up. */
+function llm_backoff(int $attempts): ?int { return [60, 300, 1800, 7200][$attempts - 1] ?? null; }
+
+/**
+ * Deferred OpenRouter step for a bookmark that already has local tags. Merges into its tags (never for tags_edited=1).
+ * @return string done | retry | gaveup
+ */
+function llm_retry(PDO $pdo, array $b, array $vocab): string {
+    $c = ['title' => (string)$b['title'], 'description' => (string)$b['description'], 'body' => (string)$b['body'], 'keywords' => '', 'channel' => '', 'yt_category' => ''];
+    $x = suggest_external($pdo, $b['url'], $c, array_keys($vocab));
+    $attempts = (int)$b['llm_attempts'] + 1;
+    if (!empty($x['transient'])) {
+        $d = llm_backoff($attempts);
+        if ($d === null) { $pdo->prepare('UPDATE bookmarks SET llm_pending=0, llm_attempts=? WHERE id=?')->execute([$attempts, $b['id']]); error_log("openrouter: gave up on #{$b['id']} after $attempts attempts"); return 'gaveup'; }
+        $pdo->prepare('UPDATE bookmarks SET llm_attempts=?, llm_next_at=? WHERE id=?')->execute([$attempts, time() + $d, $b['id']]);
+        return 'retry';
+    }
+    $pdo->prepare('UPDATE bookmarks SET llm_pending=0, llm_attempts=? WHERE id=?')->execute([$attempts, $b['id']]);
+    if (!$x) return 'gaveup';                                                         // permanent failure or cap reached
+    if (!$b['description'] && !empty($x['summary'])) $pdo->prepare('UPDATE bookmarks SET description=? WHERE id=?')->execute([$x['summary'], $b['id']]);
+    if (!$b['tags_edited']) {
+        $cur = fn($sg) => array_column($pdo->query('SELECT tag FROM tags WHERE bookmark_id=' . (int)$b['id'] . ' AND suggested=' . $sg)->fetchAll(), 'tag');
+        $applied = array_values(array_diff($cur(0), BM_FORMAT_TAGS)); $sugg = $cur(1);
+        $z = $b['embedding'] ? vocab_z($pdo, $vocab, vec_unpack($b['embedding'])) : [];
+        [$applied, $sugg] = merge_external($x, array_keys($vocab), $z, $applied, $sugg, '', $b['url']);
+        $keep = array_values(array_intersect($cur(0), BM_FORMAT_TAGS));
+        $pdo->prepare('DELETE FROM tags WHERE bookmark_id=?')->execute([$b['id']]);
+        $ins = $pdo->prepare('INSERT OR IGNORE INTO tags(bookmark_id, tag, suggested) VALUES(?,?,?)');
+        foreach (array_merge($keep, $applied) as $t) $ins->execute([$b['id'], $t, 0]);
+        foreach (array_slice(array_values(array_unique(array_diff($sugg, $applied))), 0, 5) as $t) $ins->execute([$b['id'], $t, 1]);
+        fts_reindex((int)$b['id']);
+    }
+    return 'done';
+}
+
 /**
  * Tag one crawled page.
- * @return array{tags:string[],suggested:string[],category:string,embedding:string,summary:string,api:int,cost:float}
+ * @return array{tags:string[],suggested:string[],category:string,embedding:string,summary:string,api:int,cost:float,llm_pending:bool}
  */
 function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 0): array {
     $yt = youtube_id($url) !== null;
@@ -230,10 +294,7 @@ function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 
     $add(word_hits($names, implode(' ', $phrases)), 0.5);
 
     $vec = embed(["query: $title. " . ($c['channel'] ?? '') . ' ' . mb_substr($text, 0, 900)])[0];   // 4. embedding vs. vocabulary
-    $sims = [];
-    foreach (vocab_vectors($pdo, $vocab) as $t => $v) $sims[$t] = dot($vec, $v);
-    $mean = array_sum($sims) / count($sims); $std = sqrt(array_sum(array_map(fn($s) => ($s - $mean) ** 2, $sims)) / count($sims)) ?: 1;
-    $z = array_map(fn($s) => ($s - $mean) / $std, $sims);
+    $z = vocab_z($pdo, $vocab, $vec);
     $zmax = max($z);
     foreach ($z as $t => $zz) if ($zz >= (float)(cfg('embed_z') ?: 2.0) && $zz >= 0.6 * $zmax) $score[$t] = ($score[$t] ?? 0) + min(1, $zz / 3) * 0.6;
     if ($uid) foreach (knn_tags($pdo, $uid, $vec) as $t => $share) if (isset($score[$t]) || $share >= 0.6) $score[$t] = ($score[$t] ?? 0) + 0.4 * $share;   // booster, or strong agreement   // 5. the user's own similar bookmarks
@@ -242,25 +303,16 @@ function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 
     arsort($score);
     $applied = array_slice(array_keys(array_filter($score, fn($s) => $s >= 0.5)), 0, BM_MAX);
     $sugg = array_slice(array_keys(array_filter($score, fn($s) => $s < 0.5)), 0, 3);            // weaker vocabulary candidates
-    $novel = fn(array $cands) => array_values(array_filter($cands, fn($p) => mb_strlen($p) <= 24 && !preg_match('/^\d/', $p)
-        && !in_array($p, $names, true) && !array_filter($names, fn($n) => mb_substr($n, 0, 5) === mb_substr($p, 0, 5) && mb_strlen($n) >= 5)
-        && !str_contains(preg_replace('/[^a-z0-9]/', '', mb_strtolower(($c['channel'] ?? '') . host_of($url))), preg_replace('/[^a-z0-9]/', '', $p))));
     // 6. OpenRouter only when local evidence is short or the page could not be read properly
-    $x = [];
+    $x = []; $deferred = false;
     if (count($applied) < BM_MIN || ($c['source'] ?? 'direct') !== 'direct' || crawl_thin($c)) {
         try { $x = suggest_external($pdo, $url, $c, $names); } catch (Throwable $e) { error_log('openrouter: ' . $e->getMessage()); }
-        // the model over-tags: a vocabulary pick is only applied if the embedding also ranks it in its top 10, otherwise it is just suggested
-        arsort($z); $top = array_slice(array_keys($z), 0, 10);
-        foreach ($x['tags'] ?? [] as $t) {
-            if (!in_array($t, $names, true) || in_array($t, BM_FORMAT_TAGS, true)) continue;
-            if (in_array($t, $top, true) || in_array($t, $applied, true)) $applied[] = $t; else $sugg[] = $t;
-        }
-        $applied = array_slice(array_values(array_unique($applied)), 0, BM_MAX);
-        $sugg = array_merge($novel($x['new_tags'] ?? []), $sugg);
+        if (!empty($x['transient'])) { $deferred = true; $x = []; }                 // keep local tags, retry later
+        elseif ($x) [$applied, $sugg] = merge_external($x, $names, $z, $applied, $sugg, (string)($c['channel'] ?? ''), $url);
     }
     $need = $x ? max(0, BM_MIN - count($applied) - count($sugg)) : max(2, BM_MIN - count($applied) - count($sugg));
-    $sugg = array_merge($sugg, array_slice($novel($phrases), 0, $need));                        // 7. fill up to >= 3 applied+suggested
+    $sugg = array_merge($sugg, array_slice(novel_tags($phrases, $names, (string)($c['channel'] ?? ''), $url), 0, $need));                        // 7. fill up to >= 3 applied+suggested
     $sugg = array_slice(array_values(array_unique(array_diff($sugg, $applied))), 0, 5);
     $format = ($yt || in_array('video', $dr['tags'], true)) ? ['video'] : [];
-    return ['tags' => array_merge($format, $applied), 'suggested' => $sugg, 'category' => $dr['category'] ?? category_for($applied, $yt), 'embedding' => vec_pack($vec), 'summary' => $x['summary'] ?? '', 'api' => $x ? 1 : 0, 'cost' => $x['cost'] ?? 0.0];
+    return ['tags' => array_merge($format, $applied), 'suggested' => $sugg, 'category' => $dr['category'] ?? category_for($applied, $yt), 'embedding' => vec_pack($vec), 'summary' => $x['summary'] ?? '', 'api' => $x ? 1 : 0, 'cost' => $x['cost'] ?? 0.0, 'llm_pending' => $deferred];
 }

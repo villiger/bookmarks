@@ -23,6 +23,7 @@ function render_card(array $r): string {
     $badge = '';
     if ($r['status'] === 'pending') $badge = '<span class="badge pending">pending</span>';
     elseif ($r['status'] === 'error') $badge = '<span class="badge error" title="' . h($r['error']) . '">error</span>';
+    if (!empty($r['llm_pending'])) $badge .= '<span class="llm" title="More tag suggestions coming">⋯</span>';
     $cat = $r['category'] ? '<span class="badge cat">' . h($r['category']) . '</span>' : '';
     $date = date('Y-m-d', (int)$r['created_at']);
     $poll = $r['status'] === 'pending' ? ' hx-get="card.php?id=' . $id . '" hx-trigger="every 10s" hx-swap="outerHTML"' : '';

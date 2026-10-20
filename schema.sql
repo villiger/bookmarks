@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   attempts INTEGER NOT NULL DEFAULT 0,
   tags_edited INTEGER NOT NULL DEFAULT 0,
   client_title TEXT, client_desc TEXT, client_image TEXT, client_favicon TEXT, client_canonical TEXT, client_keywords TEXT, client_text TEXT,  -- sent by the bookmarklet
+  llm_pending INTEGER NOT NULL DEFAULT 0, llm_attempts INTEGER NOT NULL DEFAULT 0, llm_next_at INTEGER NOT NULL DEFAULT 0,   -- deferred OpenRouter step
   crawl_source TEXT,                             -- direct | jina | client
   embedding BLOB,                                -- float32 e5 vector of the page text
   created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
