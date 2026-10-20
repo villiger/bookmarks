@@ -5,6 +5,7 @@ $user = require_login();
 $uid = (int)$user['id'];
 $tag = trim((string)($_GET['tag'] ?? ''));
 $q = trim((string)($_GET['q'] ?? ''));
+$seed = random_int(1, 999999);   // shuffle order for this page load; "shuffle again" replaces it in the page and every later request reuses it
 $add = base_url() . '/add.php';
 $js = "javascript:(function(){var d=document,q=function(n){var e=d.querySelector('meta[name=\"'+n+'\"],meta[property=\"'+n+'\"]');return e?e.content:''},l=d.querySelector('link[rel~=icon]'),c=d.querySelector('link[rel=canonical]'),s=String(getSelection()||''),x=(s||(d.body&&d.body.innerText)||'').replace(/\\s+/g,' ').slice(0,1500),p={k:'" . $user['bookmarklet_key'] . "',u:location.href,t:d.title,d:q('description')||q('og:description'),i:q('og:image'),f:l?l.href:'',c:c?c.href:'',kw:q('keywords'),x:x},g=function(){var a=[];for(var n in p)a.push(n+'='+encodeURIComponent(p[n]));return '" . $add . "?'+a.join('&')};while(g().length>7500&&p.x.length>100)p.x=p.x.slice(0,p.x.length-300);window.open(g(),'bm','width=300,height=120')})()";
 $st = db()->prepare("SELECT COUNT(*), COALESCE(SUM(status='pending'),0) FROM bookmarks WHERE user_id=?"); $st->execute([$uid]);
@@ -52,12 +53,12 @@ Import a bookmarks file (Safari: File ▸ Export ▸ Bookmarks): <input type="fi
   hx-get="search.php" hx-trigger="keyup changed delay:300ms, search" hx-target="#results" hx-include="[name=sort],[name=seed]" hx-vals='js:{tag: new URLSearchParams(location.search).get("tag") || ""}'></div>
 <div class="sortbar"><label>Sort <select name="sort" aria-label="Sort order" hx-get="search.php" hx-trigger="change" hx-target="#results" hx-include="[name=q],[name=seed]" hx-vals='js:{tag: new URLSearchParams(location.search).get("tag") || ""}'>
 <option value="">Shuffle</option><option value="new">Newest first</option><option value="old">Oldest first</option><option value="az">A–Z</option><option value="review">Needs review</option></select></label>
-<input type="hidden" name="seed" value="<?= random_int(1, 999999) ?>">
+<input type="hidden" name="seed" value="<?= $seed ?>">
 <button type="button" class="reshuffle" title="Shuffle again" aria-label="Shuffle again" onclick="var f=this.parentNode;f.querySelector('[name=seed]').value=Math.floor(Math.random()*999999)+1;var s=f.querySelector('select');s.value='';htmx.trigger(s,'change')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg></button></div>
 <script>(function(){var q=document.querySelector('[name=q]'),o=document.querySelector('[name=sort] option');function l(){o.textContent=q.value.trim()?'Best match':'Shuffle'}q.addEventListener('input',l);l()})()</script>
 <?= render_tagcloud($uid, false) ?>
 <div id="toast"></div>
-<div id="results"><?= render_results($uid, $q, $tag) ?></div>
+<div id="results"><?= render_results($uid, $q, $tag, '', $seed) ?></div>
 
 <script>if(matchMedia("(hover:hover)").matches&&!location.search)document.querySelector("[name=q]").focus()</script>
 </body></html>
