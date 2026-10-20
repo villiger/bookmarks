@@ -133,7 +133,7 @@ header:not(.top){display:flex;align-items:baseline;gap:12px;margin-bottom:12px}h
   .login{margin-top:10vh;padding:22px}
 }
 /* touch: the action buttons appear when a card is tapped */
-@media(hover:none),(max-width:600px){.acts{display:none;opacity:1}.card.open .acts{display:flex}.desc{display:block;-webkit-line-clamp:unset;line-clamp:none;overflow:visible}.card:not(.open) .addtag,.card:not(.open) .tag .x{display:none}.card:has(.acts){cursor:pointer}.card.open{border-color:var(--bd2);box-shadow:var(--sh2)}}
+@media(hover:none),(max-width:600px){.acts{display:none;opacity:1}.card.open .acts{display:flex}.desc{-webkit-line-clamp:2;line-clamp:2}.card.open .desc{display:block;-webkit-line-clamp:unset;line-clamp:none;overflow:visible}.card:not(.open) .addtag,.card:not(.open) .tag .x{display:none}.card:has(.acts){cursor:pointer}.card.open{border-color:var(--bd2);box-shadow:var(--sh2)}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 
 /* ---- toast (undo delete) ---- */
