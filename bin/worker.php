@@ -10,6 +10,7 @@ if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) exit(0);   // another worker is 
 
 $pdo = db();
 $max = (int)(cfg('max_attempts') ?: 3);
+$pdo->prepare("UPDATE bookmarks SET status='error', error='Gave up: processing was interrupted or failed ' || attempts || ' times' WHERE status='pending' AND attempts >= ?")->execute([$max]);   // never leave a card 'pending' forever (e.g. after a killed run)
 
 while (true) {
     $st = $pdo->prepare("SELECT * FROM bookmarks WHERE status='pending' AND attempts < ? ORDER BY id LIMIT 1");

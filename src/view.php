@@ -13,6 +13,11 @@ function domain_of(string $url): string {
     return preg_replace('/^www\./', '', $host);
 }
 
+/** Fingerprint of everything a card shows; a polling card sends it and gets 204 (no swap, no flicker) while it still matches. */
+function card_sig(array $r): string {
+    return substr(md5(json_encode([$r['status'], $r['attempts'] ?? 0, $r['title'], $r['summary'] ?? '', $r['description'], $r['favicon'], $r['image'], $r['category'], $r['llm_pending'] ?? 0, $r['error'], $r['tags'] ?? [], $r['suggested'] ?? []])), 0, 12);
+}
+
 function render_card(array $r): string {
     $id = (int)$r['id'];
     $title = $r['h_title'] ?? null;
@@ -29,7 +34,9 @@ function render_card(array $r): string {
     if (!empty($r['llm_pending'])) $badge .= '<span class="llm" title="More tag suggestions coming">⋯</span>';
     $cat = $r['category'] ? '<span class="badge cat">' . h($r['category']) . '</span>' : '';
     $date = date('Y-m-d', (int)$r['created_at']);
-    $poll = $r['status'] === 'pending' ? ' hx-get="card.php?id=' . $id . '" hx-trigger="every 10s" hx-swap="outerHTML"' : '';
+    // Pending cards refresh themselves, but never while the card is open or its tag field is in use (the swap would wipe it).
+    $poll = ($r['status'] === 'pending' && (int)($r['attempts'] ?? 0) < (int)(cfg('max_attempts') ?: 3))
+        ? ' hx-get="card.php?id=' . $id . '&amp;s=' . card_sig($r) . '" hx-trigger="every 10s [!this.classList.contains(\'open\') &amp;&amp; !this.querySelector(\'.addtag.open, input:focus\')]" hx-swap="outerHTML"' : '';
     return '<article class="card" id="b' . $id . '"' . $poll . '>'
         . ($thumb ? '<div class="thumbwrap">' . $thumb . '</div>' : '')
         . '<div class="main"><h3>' . $fav . '<a href="' . h($r['url']) . '" target="_blank" rel="noopener noreferrer">' . $titleHtml . '</a></h3>'
