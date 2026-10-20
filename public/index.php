@@ -61,4 +61,5 @@ Import a bookmarks file (Safari: File ▸ Export ▸ Bookmarks): <input type="fi
 <div id="results"><?= render_results($uid, $q, $tag, '', $seed) ?></div>
 
 <script>if(matchMedia("(hover:hover)").matches&&!location.search)document.querySelector("[name=q]").focus()</script>
+<script>document.addEventListener('click',function(e){var c=e.target.closest('.card');if(!c||!c.querySelector('.acts')||e.target.closest('a,button,input,textarea,select,form'))return;if(!matchMedia('(hover:none),(max-width:600px)').matches)return;var o=c.classList.contains('open');document.querySelectorAll('.card.open').forEach(function(x){x.classList.remove('open')});if(!o)c.classList.add('open')})</script>
 </body></html>

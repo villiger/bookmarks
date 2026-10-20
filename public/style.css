@@ -132,7 +132,8 @@ header:not(.top){display:flex;align-items:baseline;gap:12px;margin-bottom:12px}h
   .addurl button{min-height:44px}.editform button{min-height:44px}
   .login{margin-top:10vh;padding:22px}
 }
-@media(hover:none){.acts{opacity:1}}
+/* touch: the action buttons appear when a card is tapped */
+@media(hover:none),(max-width:600px){.acts{display:none;opacity:1}.card.open .acts{display:flex}.card:has(.acts){cursor:pointer}.card.open{border-color:var(--bd2);box-shadow:var(--sh2)}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 
 /* ---- toast (undo delete) ---- */
