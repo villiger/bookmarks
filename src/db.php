@@ -103,9 +103,17 @@ function search_bookmarks(int $uid, string $q, string $tag, int $limit = 100): a
         foreach ($pdo->query("SELECT bookmark_id, tag, suggested FROM tags WHERE bookmark_id IN ($ids) ORDER BY tag") as $t) {
             if ($t['suggested']) $sugg[$t['bookmark_id']][] = $t['tag']; else $tags[$t['bookmark_id']][] = $t['tag'];
         }
-        foreach ($rows as &$r) { $r['tags'] = $tags[$r['id']] ?? []; $r['suggested'] = $sugg[$r['id']] ?? []; }
+        $ok = established_tags($uid);
+        foreach ($rows as &$r) { $r['tags'] = $tags[$r['id']] ?? []; $r['suggested'] = array_values(array_filter($sugg[$r['id']] ?? [], fn($t) => isset($ok[$t]))); }
     }
     return $rows;
+}
+
+/** Tags applied to at least $min of the user's bookmarks: only these are offered as suggestions on cards. */
+function established_tags(int $uid, int $min = 3): array {
+    $st = db()->prepare('SELECT t.tag FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? AND t.suggested=0 GROUP BY t.tag HAVING COUNT(*)>=' . (int)$min);
+    $st->execute([$uid]);
+    return array_flip($st->fetchAll(PDO::FETCH_COLUMN));
 }
 
 /** Vocabulary offered to the user for autocomplete: seed tags + their own tags. */
@@ -123,6 +131,7 @@ function fetch_card(int $id, int $uid): ?array {
     $r['tags'] = []; $r['suggested'] = [];
     $t = db()->prepare('SELECT tag, suggested FROM tags WHERE bookmark_id=? ORDER BY tag');
     $t->execute([$id]);
-    foreach ($t as $x) { if ($x['suggested']) $r['suggested'][] = $x['tag']; else $r['tags'][] = $x['tag']; }
+    $ok = established_tags($uid);
+    foreach ($t as $x) { if (!$x['suggested']) $r['tags'][] = $x['tag']; elseif (isset($ok[$x['tag']])) $r['suggested'][] = $x['tag']; }
     return $r;
 }

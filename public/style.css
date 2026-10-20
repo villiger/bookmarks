@@ -67,3 +67,6 @@ form.inline{display:inline}.linkbtn{border:0;background:none;color:var(--ac);cur
   .login{margin:12vh auto}
 }
 @media(hover:none){.acts button:hover{color:var(--mut)}}
+
+.addtag{display:inline-flex;align-items:center;gap:4px}.addbtn{border:1px dashed var(--bd);background:transparent;color:var(--mut);border-radius:99px;font:inherit;font-size:13px;line-height:1;padding:3px 9px;cursor:pointer}.addbtn:hover{color:var(--ac);border-color:var(--ac)}
+@media(max-width:600px){.addbtn{min-height:30px;min-width:36px;font-size:16px}}
