@@ -12,7 +12,7 @@ function db(): PDO {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
     $pdo->exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL;');
-    $has = $pdo->query("SELECT 1 FROM sqlite_master WHERE name='bookmarks_fts'")->fetchColumn();
+    $has = $pdo->query("SELECT 1 FROM sqlite_master WHERE name='login_failures'")->fetchColumn();
     if ($new || !$has) $pdo->exec(file_get_contents(__DIR__ . '/../schema.sql'));
     @chmod($path, 0660);
     return $pdo;

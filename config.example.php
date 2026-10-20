@@ -1,8 +1,10 @@
 <?php
 // Copy to config.php (gitignored) and edit.
 return [
-    // Secret used for add.php?k=... AND as the UI password. Generate: php -r 'echo bin2hex(random_bytes(24));'
+    // Secret used ONLY for add.php?k=... (bookmarklet). Generate: php -r 'echo bin2hex(random_bytes(24));'
     'token'        => 'CHANGE_ME',
+    // UI login: password_hash() of the password. Generate: php -r 'echo password_hash("yourpassword", PASSWORD_DEFAULT);'
+    'password_hash'=> '',
     'db_path'      => __DIR__ . '/data/bookmarks.db',   // keep outside webroot
     'lock_path'    => __DIR__ . '/data/worker.lock',
     // Optional absolute URL of the public/ dir (for the bookmarklet), e.g. https://example.com/bookmarks

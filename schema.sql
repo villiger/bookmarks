@@ -27,3 +27,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS bookmarks_fts USING fts5(
   title, description, body, tags, url,
   tokenize = 'unicode61 remove_diacritics 2'
 );
+
+CREATE TABLE IF NOT EXISTS login_failures (ip TEXT NOT NULL, ts INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_lf ON login_failures(ip, ts);

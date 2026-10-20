@@ -5,7 +5,7 @@ $k = (string)($_GET['k'] ?? '');
 $u = trim((string)($_GET['u'] ?? ''));
 $t = trim((string)($_GET['t'] ?? ''));
 $msg = 'Saved ✓'; $code = 200;
-if (!hash_equals((string)cfg('token'), $k)) { $msg = 'Forbidden'; $code = 403; }
+if (!is_logged_in() && !hash_equals((string)cfg('token'), $k)) { $msg = 'Forbidden'; $code = 403; }
 elseif (!preg_match('~^https?://[^\s]+$~i', $u) || strlen($u) > 2000) { $msg = 'Invalid URL'; $code = 400; }
 else {
     $pdo = db();
