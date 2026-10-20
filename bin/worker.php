@@ -23,7 +23,8 @@ while (true) {
     $attempts = (int)$b['attempts'] + 1;
     $t0 = microtime(true);
     try {
-        $c = crawl_any(crawl_candidates($b['url'], (bool)$b['scheme_guessed']));
+        [$c, $src] = crawl_resilient($b);
+        $c['source'] = $src;
         // Final URL after redirects, cleaned; merge into an existing bookmark if it's a duplicate
         $finalUrl = clean_url($c['final_url'] ?? $b['url']);
         $finalKey = url_key($finalUrl);
@@ -34,17 +35,19 @@ while (true) {
         $desc = $c['description'];
         $vocab = vocab($pdo, (int)$b['user_id']);
         $r = tag_bookmark($finalUrl, $c, $vocab, $pdo, (int)$b['user_id']);
-        if ($desc === '') $desc = mb_substr($c['body'], 0, 200);
+        if ($desc === '') $desc = $r['summary'] ?: mb_substr($c['body'], 0, 200);
         $pdo->beginTransaction();
-        $pdo->prepare("UPDATE bookmarks SET title=?, description=?, favicon=?, image=?, body=?, category=?, status='done', error=NULL, embedding=?, url=?, url_key=?, scheme_guessed=0 WHERE id=?")
-            ->execute([$title, $desc, $c['favicon'], $c['image'], $c['body'], $r['category'], $r['embedding'], $finalUrl, $finalKey, $id]);
-        $pdo->prepare('DELETE FROM tags WHERE bookmark_id=?')->execute([$id]);
-        $ins = $pdo->prepare('INSERT OR IGNORE INTO tags(bookmark_id, tag, suggested) VALUES(?,?,?)');
-        foreach ($r['tags'] as $t) $ins->execute([$id, $t, 0]);
-        foreach ($r['suggested'] as $t) $ins->execute([$id, $t, 1]);
+        $pdo->prepare("UPDATE bookmarks SET title=?, description=?, favicon=?, image=?, body=?, category=?, status='done', error=NULL, crawl_source=?, embedding=?, url=?, url_key=?, scheme_guessed=0 WHERE id=?")
+            ->execute([$title, $desc, $c['favicon'], $c['image'], $c['body'], $r['category'], $src, $r['embedding'], $finalUrl, $finalKey, $id]);
+        if (!$b['tags_edited']) {      // never overwrite tags the user corrected
+            $pdo->prepare('DELETE FROM tags WHERE bookmark_id=?')->execute([$id]);
+            $ins = $pdo->prepare('INSERT OR IGNORE INTO tags(bookmark_id, tag, suggested) VALUES(?,?,?)');
+            foreach ($r['tags'] as $t) $ins->execute([$id, $t, 0]);
+            foreach ($r['suggested'] as $t) $ins->execute([$id, $t, 1]);
+        }
         $pdo->commit();
         fts_reindex($id);
-        echo date('c') . " done #$id {$b['url']} [" . implode(',', $r['tags']) . "] {$r['category']} +" . implode(',', $r['suggested']) . ' ' . round(microtime(true) - $t0, 1) . "s\n";
+        echo date('c') . " done #$id {$b['url']} [" . implode(',', $r['tags']) . "] {$r['category']} +" . implode(',', $r['suggested']) . " [$src" . ($r['api'] ? ',api' : '') . '] ' . round(microtime(true) - $t0, 1) . "s\n";
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         $status = $attempts >= $max ? 'error' : 'pending';

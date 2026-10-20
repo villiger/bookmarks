@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   error TEXT,
   attempts INTEGER NOT NULL DEFAULT 0,
   tags_edited INTEGER NOT NULL DEFAULT 0,
+  client_title TEXT, client_desc TEXT, client_image TEXT, client_favicon TEXT, client_canonical TEXT, client_keywords TEXT, client_text TEXT,  -- sent by the bookmarklet
+  crawl_source TEXT,                             -- direct | jina | client
   embedding BLOB,                                -- float32 e5 vector of the page text
   created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
   UNIQUE(user_id, url)
@@ -51,3 +53,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS bookmarks_fts USING fts5(
 
 -- cached e5 embeddings of the vocabulary descriptions (h = md5 of the description)
 CREATE TABLE IF NOT EXISTS tag_vec (tag TEXT PRIMARY KEY, h TEXT NOT NULL, vec BLOB NOT NULL);
+
+-- OpenRouter calls per month (cap in config)
+CREATE TABLE IF NOT EXISTS api_usage (month TEXT PRIMARY KEY, calls INTEGER NOT NULL DEFAULT 0);

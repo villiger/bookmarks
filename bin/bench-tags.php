@@ -14,11 +14,12 @@ $stats = [];
 foreach ($urls as $u) {
     $t0 = microtime(true);
     try {
-        $c = crawl($u);
+        [$c, $src] = crawl_resilient(['url' => $u, 'scheme_guessed' => 0] + array_fill_keys(['client_title', 'client_desc', 'client_image', 'client_favicon', 'client_keywords', 'client_text'], null));
+        $c['source'] = $src;
         $r = tag_bookmark($u, $c, $vocab, $pdo); $ti = mb_substr($c["title"], 0, 45);
-        $topic = array_diff($r['tags'], BM_FORMAT_TAGS); $stats[] = [count($topic), count($topic) + count($r['suggested']), true, microtime(true) - $t0];
+        $topic = array_diff($r['tags'], BM_FORMAT_TAGS); $stats[] = [count($topic), count($topic) + count($r['suggested']), true, microtime(true) - $t0, $r['api'], $r['cost']];
         printf("%-62s | %-40s | %-9s | %-4s | %.1f%s\n", mb_substr($u, 0, 62), implode(',', $r['tags']), $r['category'], 'yes', microtime(true) - $t0,
-            ' | ' . $ti . ($r['suggested'] ? '  (suggested: ' . implode(',', $r['suggested']) . ')' : ''));
+            ' | ' . $ti . ($r['suggested'] ? ' [' . $src . ($r['api'] ? ',api' : '') . ']  (suggested: ' . implode(',', $r['suggested']) . ')' : ''));
     } catch (Throwable $e) {
         printf("%-62s | ERROR %s\n", mb_substr($u, 0, 62), mb_substr($e->getMessage(), 0, 60));
     }
@@ -27,6 +28,6 @@ foreach ($urls as $u) {
 if ($stats) {
     $n = count($stats);
     $p = fn($f) => round(100 * count(array_filter($stats, $f)) / $n);
-    printf("\nSUMMARY n=%d | applied>=3: %d%% | applied+suggested>=3: %d%% | avg applied %.1f | avg applied+suggested %.1f | avg %.1fs\n", $n,
-        $p(fn($x) => $x[0] >= 3), $p(fn($x) => $x[1] >= 3), array_sum(array_column($stats, 0)) / $n, array_sum(array_column($stats, 1)) / $n, array_sum(array_column($stats, 3)) / $n);
+    printf("\nSUMMARY n=%d | applied>=3: %d%% | applied+suggested>=3: %d%% | avg applied %.1f | avg applied+suggested %.1f | avg %.1fs | api calls %d | est. cost $%.5f (= $%.2f per 1000 bookmarks)\n", $n,
+        $p(fn($x) => $x[0] >= 3), $p(fn($x) => $x[1] >= 3), array_sum(array_column($stats, 0)) / $n, array_sum(array_column($stats, 1)) / $n, array_sum(array_column($stats, 3)) / $n, array_sum(array_column($stats, 4)), array_sum(array_column($stats, 5)), 1000 * array_sum(array_column($stats, 5)) / $n);
 }

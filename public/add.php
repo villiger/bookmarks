@@ -32,7 +32,10 @@ if (!$user && preg_match('/^[0-9a-f]{64}$/', $k)) {
 }
 if (!$user) { $msg = 'Forbidden'; $code = 403; }
 else {
-    $res = add_bookmark((int)$user['id'], $u, $t);
+    $client = ['client_title' => $t, 'client_desc' => $_GET['d'] ?? '', 'client_image' => $_GET['i'] ?? '', 'client_favicon' => $_GET['f'] ?? '',
+               'client_canonical' => $_GET['c'] ?? '', 'client_keywords' => $_GET['kw'] ?? '', 'client_text' => $_GET['x'] ?? ''];
+    foreach (['client_image', 'client_favicon', 'client_canonical'] as $f) if (!preg_match('~^https?://~i', (string)$client[$f])) $client[$f] = '';   // only http(s) URLs
+    $res = add_bookmark((int)$user['id'], $u, $t, $client);
     if ($res['status'] === 'invalid') { $msg = 'Invalid URL'; $code = 400; }
     elseif ($res['status'] === 'dup') $msg = 'Already saved ✓';
 }

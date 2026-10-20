@@ -178,12 +178,41 @@ function category_for(array $tags, bool $yt): string {
     return 'other';
 }
 
-/** Optional hook for extra new-tag suggestions from an external service (e.g. OpenRouter). Not implemented. */
-function suggest_external(array $crawl, array $have): array { return []; }
+/**
+ * Optional OpenRouter step (cheap Gemini Flash-Lite): vocabulary picks, new tags, a one-sentence summary.
+ * Capped per month in api_usage; returns [] on any problem so the local result is used.
+ * @return array{tags:string[],new_tags:string[],summary:string,cost:float}|array{}
+ */
+function suggest_external(PDO $pdo, string $url, array $c, array $names): array {
+    if (!($key = cfg('openrouter_key'))) return [];
+    $month = date('Y-m');
+    $pdo->prepare('INSERT OR IGNORE INTO api_usage(month,calls) VALUES(?,0)')->execute([$month]);
+    $n = $pdo->prepare('SELECT calls FROM api_usage WHERE month=?'); $n->execute([$month]);
+    if ((int)$n->fetchColumn() >= (int)(cfg('openrouter_cap') ?: 3000)) { error_log('openrouter: monthly call cap reached'); return []; }
+    $pdo->prepare('UPDATE api_usage SET calls=calls+1 WHERE month=?')->execute([$month]);
+    $yt = youtube_id($url) !== null;
+    $prompt = 'Domain: ' . host_of($url) . "\nTitle: " . mb_substr($c['title'] ?: $url, 0, 200) . "\nDescription: " . mb_substr($c['description'], 0, 400)
+        . ($yt ? "\nChannel: {$c['channel']}\nYouTube category: {$c['yt_category']}\nYouTube keywords: " . mb_substr($c['keywords'], 0, 300) : '')
+        . "\nText: " . mb_substr($c['body'], 0, 1000) . "\nVocabulary: " . implode(', ', array_diff($names, BM_FORMAT_TAGS))
+        . "\nReply with JSON only: {\"tags\": [2 to 5 tags chosen ONLY from the vocabulary; include only tags that clearly apply], \"new_tags\": [0 to 3 specific new lowercase tags of 1-2 words that are not in the vocabulary], \"summary\": \""
+        . ($c['description'] === '' ? 'one sentence about the page' : '') . "\"}";
+    $ch = curl_init('https://openrouter.ai/api/v1/chat/completions');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $key, 'Content-Type: application/json', 'HTTP-Referer: ' . (cfg('base_url') ?: 'https://localhost'), 'X-Title: Bookmarks'],
+        CURLOPT_POSTFIELDS => json_encode(['model' => cfg('openrouter_model') ?: 'google/gemini-2.5-flash-lite', 'temperature' => 0.2, 'max_tokens' => 300,
+            'response_format' => ['type' => 'json_object'], 'messages' => [['role' => 'system', 'content' => 'You tag and summarize bookmarks. Reply with JSON only.'], ['role' => 'user', 'content' => $prompt]]])]);
+    $r = json_decode((string)curl_exec($ch), true);
+    for ($i = 1; $i <= 2 && ($r['error']['code'] ?? 0) == 429; $i++) { sleep(3 * $i); $r = json_decode((string)curl_exec($ch), true); }   // upstream rate limit: retry twice
+    $j = json_decode((string)($r['choices'][0]['message']['content'] ?? ''), true);
+    if (!is_array($j)) { error_log('openrouter: failed ' . substr(json_encode($r['error'] ?? curl_error($ch)), 0, 160)); return []; }
+    $u = $r['usage'] ?? [];
+    return ['tags' => normalize_tags((array)($j['tags'] ?? [])), 'new_tags' => normalize_tags((array)($j['new_tags'] ?? [])), 'summary' => mb_substr(trim((string)($j['summary'] ?? '')), 0, 300),
+            'cost' => ($u['prompt_tokens'] ?? 0) * (float)(cfg('openrouter_price_in') ?: 1e-7) + ($u['completion_tokens'] ?? 0) * (float)(cfg('openrouter_price_out') ?: 4e-7)];
+}
 
 /**
  * Tag one crawled page.
- * @return array{tags:string[],suggested:string[],category:string,embedding:string}
+ * @return array{tags:string[],suggested:string[],category:string,embedding:string,summary:string,api:int,cost:float}
  */
 function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 0): array {
     $yt = youtube_id($url) !== null;
@@ -213,11 +242,25 @@ function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 
     arsort($score);
     $applied = array_slice(array_keys(array_filter($score, fn($s) => $s >= 0.5)), 0, BM_MAX);
     $sugg = array_slice(array_keys(array_filter($score, fn($s) => $s < 0.5)), 0, 3);            // weaker vocabulary candidates
-    $fresh = array_values(array_filter($phrases, fn($p) => mb_strlen($p) <= 24 && !preg_match('/^\d/', $p)
+    $novel = fn(array $cands) => array_values(array_filter($cands, fn($p) => mb_strlen($p) <= 24 && !preg_match('/^\d/', $p)
         && !in_array($p, $names, true) && !array_filter($names, fn($n) => mb_substr($n, 0, 5) === mb_substr($p, 0, 5) && mb_strlen($n) >= 5)
         && !str_contains(preg_replace('/[^a-z0-9]/', '', mb_strtolower(($c['channel'] ?? '') . host_of($url))), preg_replace('/[^a-z0-9]/', '', $p))));
-    $sugg = array_merge($sugg, array_slice($fresh, 0, max(2, BM_MIN - count($applied) - count($sugg)))); // 6. fill up to >= 3 applied+suggested
+    // 6. OpenRouter only when local evidence is short or the page could not be read properly
+    $x = [];
+    if (count($applied) < BM_MIN || ($c['source'] ?? 'direct') !== 'direct' || crawl_thin($c)) {
+        try { $x = suggest_external($pdo, $url, $c, $names); } catch (Throwable $e) { error_log('openrouter: ' . $e->getMessage()); }
+        // the model over-tags: a vocabulary pick is only applied if the embedding also ranks it in its top 10, otherwise it is just suggested
+        arsort($z); $top = array_slice(array_keys($z), 0, 10);
+        foreach ($x['tags'] ?? [] as $t) {
+            if (!in_array($t, $names, true) || in_array($t, BM_FORMAT_TAGS, true)) continue;
+            if (in_array($t, $top, true) || in_array($t, $applied, true)) $applied[] = $t; else $sugg[] = $t;
+        }
+        $applied = array_slice(array_values(array_unique($applied)), 0, BM_MAX);
+        $sugg = array_merge($novel($x['new_tags'] ?? []), $sugg);
+    }
+    $need = $x ? max(0, BM_MIN - count($applied) - count($sugg)) : max(2, BM_MIN - count($applied) - count($sugg));
+    $sugg = array_merge($sugg, array_slice($novel($phrases), 0, $need));                        // 7. fill up to >= 3 applied+suggested
     $sugg = array_slice(array_values(array_unique(array_diff($sugg, $applied))), 0, 5);
     $format = ($yt || in_array('video', $dr['tags'], true)) ? ['video'] : [];
-    return ['tags' => array_merge($format, $applied), 'suggested' => $sugg, 'category' => $dr['category'] ?? category_for($applied, $yt), 'embedding' => vec_pack($vec)];
+    return ['tags' => array_merge($format, $applied), 'suggested' => $sugg, 'category' => $dr['category'] ?? category_for($applied, $yt), 'embedding' => vec_pack($vec), 'summary' => $x['summary'] ?? '', 'api' => $x ? 1 : 0, 'cost' => $x['cost'] ?? 0.0];
 }

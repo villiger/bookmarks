@@ -3,7 +3,8 @@
 Three generations, same URLs, run on villiger (1 vCPU):
 - **Qwen v0**: first LLM tagger (`before.txt`).
 - **Qwen final**: tuned LLM tagger, closed vocabulary + min-3 rule (`qwen-final*.txt`).
-- **Hybrid**: rules + YAKE + e5 embeddings + kNN, no generative model (`hybrid.txt`, current code).
+- **Hybrid**: rules + YAKE + e5 embeddings + kNN, no generative model (`hybrid.txt`).
+- **Hybrid + OpenRouter**: same, plus `google/gemini-2.5-flash-lite` for short/blocked pages or fewer than 3 applied tags (`hybrid-or.txt`, current code).
 
 "applied" = tags actually applied, "sugg" = dimmed click-to-accept suggestions; `video` is not counted.
 
@@ -65,3 +66,52 @@ Judgement: 1, 2, 4, 6, 8, 9 better (junk such as food, php, gamedev guesses gone
 ## Caveats
 - e5-small similarities are compressed (0.88 to 0.95 between unrelated pages), so the embedding is used through outlier z-scores, and kNN only boosts other evidence (it needs a larger bookmark base to help).
 - Broad words in the vocabulary still produce occasional wrong tags (self-hosted on SQLite).
+
+## Hybrid + OpenRouter (google/gemini-2.5-flash-lite: $0.10 per 1M input tokens, $0.40 per 1M output tokens)
+Called only when fewer than 3 topic tags are applied locally or the page was blocked/thin. A vocabulary pick from the model is applied only if the embedding also ranks it in its top 10; otherwise it becomes a dimmed suggestion (the model over-tags). Its new tags are always suggestions.
+
+| | Hybrid | Hybrid + OpenRouter |
+|--|--|--|
+| 15 URLs (2 more crawlable now): applied >= 3 / a+s >= 3 | 8% / 100% (13 URLs) | 53% / 100% |
+| avg applied / applied+suggested | 1.5 / 3.8 | 2.9 / 6.0 |
+| 6 YouTube URLs: applied >= 3 / a+s >= 3 | 17% / 100% | 50% / 83% |
+| user's 10 bookmarks: applied >= 3 / a+s >= 3 | 44% / 100% (9 URLs) | 80% / 100% |
+| avg time per URL | 0.6 to 1.6 s | 1.5 to 3.1 s |
+| API calls (15 / 6 / 10 URLs) | 0 | 14 / 5 / 6 |
+| est. cost per 1000 bookmarks | $0 | about $0.06 to $0.08 (about 0.012 cent per call) |
+| peak RAM | 203 MB | 205 MB |
+
+Cap: 3000 calls per month (`openrouter_cap`), about $0.36 at worst, far below the $1 limit. Upstream returned HTTP 429 in bursts (retried twice with backoff, then silently falls back to the local result; the log line is `openrouter: failed ...`).
+
+Per URL, compared with plain hybrid:
+| URL | Hybrid + OpenRouter | Verdict |
+|--|--|--|
+| llama.cpp | ai, opensource, tools, devops | same (tools/devops weak) |
+| Rick Astley | video, music, tech | same |
+| Simple Made Easy | video, design, tech (sugg: complexity, programming, software design) | same, better suggestions |
+| Wikipedia SQLite | database, self-hosted, opensource, tools, tech (sugg: rdbms, embedded database) | same (self-hosted wrong) |
+| Guardian technology | news, tech, ai, business | better |
+| php.net PDO | php, docs, database | same |
+| IKEA | shopping, tools (sugg: bookshelf, ikea furniture) | same |
+| lasagne | food, health (sugg: lasagne recipe, beef mince) | same |
+| immich | self-hosted, tools, tech, productivity (sugg: photo management) | better |
+| MDN | css, docs | same |
+| Hacker News | news, tech, business | better |
+| tagesschau | news (sugg: politics, german news) | same |
+| Spotify show | music, self-hosted, news, business | worse (self-hosted, news wrong) |
+| joelonsoftware (was 403) | tech, career, productivity, tools | now works (desktop UA retry) |
+| stackoverflow (was 403) | tech (sugg: algorithm optimization, data structures) | now works (jina reader) |
+
+Of the 13 URLs that worked before: better 3, same 9, worse 1. The main gain is in the suggestions (specific tags such as `geopolitics`, `yacht design`, `lapstrake`), the 3-tag minimum, and blocked pages.
+
+User's 10 bookmarks after the retag (edited #3 and #5 untouched; crawl source in brackets):
+| # | Tags |
+|--|--|
+| 1 beszel.dev | devops (sugg: lightweight, server) [direct, API rate-limited that run] |
+| 2 monitorix.org | linux, opensource, self-hosted |
+| 4 YouTube "Sind wir im Krieg?" | video, fun, politics, security (sugg: geopolitics, hybrid warfare, armed conflict, history) |
+| 6 YouTube Paradox game | video, gaming, history, tech (sugg: grand strategy, stellaris, post-apocalyptic) |
+| 7 London Monster | history (sugg: london history) |
+| 8 YouTube Blender | video, art, music, tutorial (sugg: speed modeling, house) |
+| 9 smallboatsmonthly | fun, design, tools (sugg: dinghy boat, clinker design, kit boat) |
+| 10 gartsideboats (was error 429) | design (sugg: yacht design, boat building, traditional craft) [direct, fetched with the desktop UA] |

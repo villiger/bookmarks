@@ -6,7 +6,7 @@ $uid = (int)$user['id'];
 $tag = trim((string)($_GET['tag'] ?? ''));
 $q = trim((string)($_GET['q'] ?? ''));
 $add = base_url() . '/add.php';
-$js = "javascript:(function(){window.open('" . $add . "?k=" . $user['bookmarklet_key'] . "&u='+encodeURIComponent(location.href)+'&t='+encodeURIComponent(document.title),'bm','width=300,height=120')})()";
+$js = "javascript:(function(){var d=document,q=function(n){var e=d.querySelector('meta[name=\"'+n+'\"],meta[property=\"'+n+'\"]');return e?e.content:''},l=d.querySelector('link[rel~=icon]'),c=d.querySelector('link[rel=canonical]'),s=String(getSelection()||''),x=(s||(d.body&&d.body.innerText)||'').replace(/\\s+/g,' ').slice(0,1500),p={k:'" . $user['bookmarklet_key'] . "',u:location.href,t:d.title,d:q('description')||q('og:description'),i:q('og:image'),f:l?l.href:'',c:c?c.href:'',kw:q('keywords'),x:x},g=function(){var a=[];for(var n in p)a.push(n+'='+encodeURIComponent(p[n]));return '" . $add . "?'+a.join('&')};while(g().length>7500&&p.x.length>100)p.x=p.x.slice(0,p.x.length-300);window.open(g(),'bm','width=300,height=120')})()";
 $st = db()->prepare("SELECT COUNT(*), COALESCE(SUM(status='pending'),0) FROM bookmarks WHERE user_id=?"); $st->execute([$uid]);
 [$count, $pending] = $st->fetch(PDO::FETCH_NUM);
 $reqs = $user['is_admin'] ? (int)db()->query("SELECT COUNT(*) FROM users WHERE status='pending'")->fetchColumn() : 0;

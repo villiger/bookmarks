@@ -23,6 +23,10 @@ function db(): PDO {
     if (!$has('bookmarks', 'scheme_guessed')) $pdo->exec('ALTER TABLE bookmarks ADD COLUMN scheme_guessed INTEGER NOT NULL DEFAULT 0');
     if (!$has('bookmarks', 'embedding')) $pdo->exec('ALTER TABLE bookmarks ADD COLUMN embedding BLOB');
     $pdo->exec('CREATE TABLE IF NOT EXISTS tag_vec (tag TEXT PRIMARY KEY, h TEXT NOT NULL, vec BLOB NOT NULL)');
+    foreach (['client_title', 'client_desc', 'client_image', 'client_favicon', 'client_canonical', 'client_keywords', 'client_text', 'crawl_source'] as $col) {
+        if (!$has('bookmarks', $col)) $pdo->exec("ALTER TABLE bookmarks ADD COLUMN $col TEXT");
+    }
+    $pdo->exec('CREATE TABLE IF NOT EXISTS api_usage (month TEXT PRIMARY KEY, calls INTEGER NOT NULL DEFAULT 0)');
     foreach ($pdo->query("SELECT id, url FROM bookmarks WHERE url_key=''")->fetchAll() as $r) {
         $pdo->prepare('UPDATE bookmarks SET url_key=? WHERE id=?')->execute([url_key($r['url']), $r['id']]);
     }

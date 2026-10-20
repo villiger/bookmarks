@@ -17,6 +17,10 @@ return [
     'embed_threads'=> 2,
     'embed_z'      => 2.0,    // vocabulary tags with z-score >= this (vs. all vocab similarities) count as candidates
     'youtube_api_key' => '',  // optional YouTube Data API v3 key (topicCategories); empty = skip
+    // Optional OpenRouter step for short/blocked pages (empty key = off). Never commit a real key.
+    'openrouter_key'   => '',
+    'openrouter_model' => 'google/gemini-2.5-flash-lite',
+    'openrouter_cap'   => 3000,   // calls per month
     'max_attempts' => 3,
     // Starter tag vocabulary, one tag per line (edit freely). Merged with the most-used existing tags.
     'seed_tags_file' => __DIR__ . '/seed_tags.txt',
