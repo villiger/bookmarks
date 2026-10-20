@@ -84,3 +84,14 @@ function render_edit(array $r, string $err = ''): string {
         . ($err !== '' ? '<div class="err">' . h($err) . '</div>' : '')
         . '<div class="btns"><button type="submit">Save</button><button type="button" hx-get="card.php?id=' . $id . '" hx-target="#b' . $id . '" hx-swap="outerHTML">Cancel</button></div></form></article>';
 }
+
+/** Tag cloud: the 10 most used tags plus an "all" link that swaps in the full list (and back). */
+function render_tagcloud(int $uid, bool $all): string {
+    $tags = top_tags($uid, $all ? 200 : 10);
+    $o = '<div class="tagcloud" id="tagcloud">';
+    foreach ($tags as $t) {
+        $e = h(rawurlencode($t['tag']));
+        $o .= '<a class="tag" href="?tag=' . $e . '" hx-get="search.php?tag=' . $e . '" hx-target="#results" hx-push-url="?tag=' . $e . '" hx-include="[name=q],[name=sort],[name=seed]">' . h($t['tag']) . ' <small>' . (int)$t['c'] . '</small></a>';
+    }
+    return $o . '<a class="more" href="#" hx-get="tags.php?all=' . ($all ? 0 : 1) . '" hx-target="#tagcloud" hx-swap="outerHTML">' . ($all ? 'fewer' : 'all tags') . '</a></div>';
+}
