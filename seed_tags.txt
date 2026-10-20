@@ -16,12 +16,10 @@ music: music, song, album, band, artist, concert, lyrics, playlist, podcast, aud
 news: news, current events, journalism, breaking, headlines, newspaper, report
 politics: politics, government, elections, parliament, war, geopolitics, policy, president
 science: science, research, physics, chemistry, biology, space, astronomy, study, experiment
-finance: finance, money, banking, stocks, investing, economy, crypto, taxes, insurance
 shopping: shopping, buy, price, product, store, cart, order, discount, sale
 travel: travel, trip, hotel, flight, vacation, destination, tourism, city guide
 food: food, recipe, cooking, ingredients, kitchen, baking, restaurant, meal
 health: health, medicine, fitness, nutrition, sleep, mental health, doctor, exercise
-tools: tools, utility, app, software, command line tool, extension, productivity tool
 self-hosted: self-hosted, selfhosting, homelab, home server, open source alternative, docker compose
 docs: documentation, manual, reference, api reference, specification, wiki
 opensource: open source, github, repository, license, community, contributors, free software
@@ -29,7 +27,6 @@ productivity: productivity, notes, tasks, workflow, time management, organizatio
 gaming: gaming, video games, trailer, console, playstation, steam, esports, minecraft
 hardware: hardware, computer parts, electronics, gadgets, cpu, gpu, keyboard, devices, raspberry pi
 career: career, jobs, hiring, interview, resume, work, salary, management
-fun: fun, funny, humor, comedy, memes, entertainment, games for fun
 tech: technology, tech industry, gadgets, software industry, startups, innovation
 film: film, movie, cinema, animation, series, tv show, director, actor
 sports: sports, football, soccer, tennis, olympics, fitness competition, team, match

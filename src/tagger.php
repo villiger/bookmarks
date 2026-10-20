@@ -5,13 +5,13 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/crawler.php';
 
 const BM_CATEGORIES = ['dev', 'news', 'video', 'shopping', 'reference', 'article', 'tool', 'other'];
-const BM_FORMAT_TAGS = ['video', 'book', 'podcast', 'recipe', 'paper', 'product', 'repo'];   // medium, from structure (format_rules.txt); never from the model, never counted toward the 3
+const BM_FORMAT_TAGS = ['video', 'book', 'podcast', 'recipe', 'paper', 'product', 'repo', 'article', 'reference', 'tool'];   // medium, from structure (format_rules.txt); never from the model, never counted toward the 3
 const BM_MIN = 2;      // applied topic tags: 2..4 (format tags come on top)
 const BM_MAX = 4;
 const BM_ALIASES = ['golang' => 'go', 'js' => 'javascript', 'machine learning' => 'ai', 'llm' => 'ai', 'open source' => 'opensource', 'selfhosted' => 'self-hosted', 'homelab' => 'self-hosted',
     'recipe' => 'food', 'sqlite' => 'database', 'sql' => 'database', 'docker' => 'devops', 'kubernetes' => 'devops', 'cybersecurity' => 'security', 'nachrichten' => 'news', 'politik' => 'politics'];
-const BM_YT_CATEGORY = ['music' => 'music', 'science & technology' => 'tech', 'education' => 'tutorial', 'gaming' => 'gaming', 'howto & style' => 'tutorial', 'news & politics' => 'news',
-    'comedy' => 'fun', 'entertainment' => 'fun', 'film & animation' => 'film', 'sports' => 'sports', 'travel & events' => 'travel', 'autos & vehicles' => 'cars', 'pets & animals' => 'animals'];
+const BM_YT_CATEGORY = ['music' => 'music', 'gaming' => 'gaming',
+    'film & animation' => 'film', 'sports' => 'sports', 'travel & events' => 'travel', 'autos & vehicles' => 'cars', 'pets & animals' => 'animals'];
 
 function normalize_tags(array $tags): array {
     $out = [];
@@ -101,8 +101,13 @@ function category_for(array $tags, bool $yt): string {
 /** A usable summary: 20-450 chars, about the subject (not availability/price/store), not "This page..." (and not "This article..." for books, videos, ...); '' otherwise. */
 function valid_summary(string $s, array $format = []): string {
     $s = clean_text(strip_tags($s));
-    $generic = array_intersect($format, ['book', 'video', 'podcast', 'product', 'repo']) ? '|article|website|site|post' : '';
-    return (mb_strlen($s) < 20 || mb_strlen($s) > 450 || preg_match('/^(this (web)?page' . $generic . ')\b|^diese seite\b|\b(available|kaufen|disponibile|formats?|price|shipping|in stock|add to cart)\b/i', $s)) ? '' : $s;
+    if (mb_strlen($s) > 450) {   // cut at the last sentence end that fits
+        $cut = mb_substr($s, 0, 450);
+        $s = preg_match('/^.*[.!?]/su', $cut, $m) ? $m[0] : '';
+    }
+    $s = preg_replace_callback('/^(this|the) (web)?(page|video|article|post|site|website|book|podcast|channel) (\w+s|\w+ed) (that |how )?/iu', fn() => '', $s, 1, $n);   // "This article argues that X" -> "X"
+    if ($n) $s = mb_strtoupper(mb_substr($s, 0, 1)) . mb_substr($s, 1);
+    return (mb_strlen($s) < 20 || preg_match('/^(this|the) (web)?(page|video|article|post|site|website|book|podcast|channel)\b|^diese seite\b|\b(available|kaufen|disponibile|formats?|price|shipping|in stock|add to cart)\b/i', $s)) ? '' : $s;
 }
 
 /** New-tag candidates: not vocabulary tags (or stems of them), no site/brand/channel names. */
@@ -178,18 +183,21 @@ function suggest_external(PDO $pdo, string $url, array $c, array $names, array $
         . ($yt ? "\nChannel: {$c['channel']}\nYouTube category: {$c['yt_category']}\nYouTube keywords: " . mb_substr($c['keywords'], 0, 300) : '') . "\nText: " . mb_substr($c['body'], 0, 1200)
         . "\n\nVocabulary: " . implode(', ', array_diff($names, BM_FORMAT_TAGS))
         . ($shots ? "\nHow this user tags other pages:\n" . implode("\n", $shots) : '');
-    $ask = fn(string $extra) => $base . "\n\nReply with JSON only: {\"tags\": [2 to 4 tags chosen ONLY from the vocabulary, most relevant first; only tags central to this page; avoid vague catch-alls like tools, tech, business, productivity or fun unless the page is really about them], "
-        . "\"new_tags\": [0 to 3 specific new lowercase tags of 1-2 words; if fewer than 2 vocabulary tags fit, give at least 2 minus that many], \"category\": \"one of " . implode('|', BM_CATEGORIES) . "\", "
-        . "\"summary\": \"Write 2-3 sentences (max 400 characters) that say what this is and what it is about, starting with what it is, e.g. 'A book by Gil Durán arguing...', 'A YouTube video by X showing...', 'An essay by James Madison (Federalist No. 10) arguing...', "
-        . "'A free open-source tool for...', 'A Wikipedia article about...'. Describe the content itself, not the website, availability, price, formats or shipping. Same language as the page. No marketing fluff.$extra\"}";
+    $ask = fn(string $extra) => $base . "\n\nReply with JSON only: {\"tags\": [up to 4 tags chosen ONLY from the vocabulary, most relevant first; fewer (even 1) is fine when nothing else clearly fits; only tags central to this page; avoid vague catch-alls like tools, tech, business, productivity, news, art, science, docs, devops, opensource or fun unless the page is really about them; never tag something unrelated such as cars for a boat], "
+        . "\"new_tags\": [0 to 2 specific new lowercase tags of 1-2 words, only ones that clearly and centrally describe this page; an empty list is the normal answer when the vocabulary tags already cover it], \"category\": \"one of " . implode('|', BM_CATEGORIES) . "\", "
+        . "\"summary\": \"Write 2-3 sentences (max 400 characters) on what this is about and what it offers or argues. Start with the substance, not with the medium: never say 'A YouTube video', 'A Wikipedia article', 'A web page', 'A website' or 'This article', since the site already shows that. "
+        . "Lead with the topic or the main claim, not with who made it. Mention the author or channel only when they are the point (a famous author, an essay, a book) and then at most once, never as the sentence subject by default. Never write 'the video', 'the article' or 'the page' anywhere in the summary. "
+        . "Name the form only when it adds information (an essay, a paper, a tutorial, a review, a novel). Examples: 'How a 10-foot stitch-and-glue dinghy rows, tows and sails, and how it was designed.', 'Federalist No. 10 (Madison) argues that a large republic best contains the danger of factions.', 'Speed-modelling a Scandinavian medieval house in Blender for game use.', 'The 1788 London panic over an unidentified attacker of women.' "
+        . "Not the website, availability, price, formats or shipping. Same language as the page. No marketing fluff.$extra\"}";
     $out = ['transient' => true];
-    foreach (['', " It is $type: the first words must name it (for example 'A " . ltrim(substr($type, 2)) . "...'); never start with 'This'."] as $i => $extra) {
+    foreach (['', " Begin directly with the subject; never start with 'This'."] as $i => $extra) {
         $p = openrouter_post($pdo, $ask($extra), 450);
         if (!isset($p['j'])) return $i ? $out : $p;
         $j = $p['j'];
         $out = ['tags' => normalize_tags((array)($j['tags'] ?? [])), 'new_tags' => normalize_tags((array)($j['new_tags'] ?? [])), 'category' => in_array($j['category'] ?? '', BM_CATEGORIES, true) ? $j['category'] : '',
                 'summary' => valid_summary((string)($j['summary'] ?? ''), $format), 'cost' => $p['cost'] + ($out['cost'] ?? 0)];
         if ($out['summary'] !== '') break;
+        error_log('openrouter: summary rejected: ' . mb_substr((string)($j['summary'] ?? ''), 0, 200));
     }
     return $out;
 }
@@ -204,7 +212,7 @@ function merge_picks(array $x, array $vocab, array $applied, array $sugg, string
     $held = [];
     foreach ($x['tags'] ?? [] as $t) {
         if (!in_array($t, $names, true) || in_array($t, BM_FORMAT_TAGS, true) || $brandHit($t) || in_array($t, $applied, true)) continue;
-        if (count($applied) < 2 || tag_in_text($t, $vocab[$t], "$text $body")) $applied[] = $t; else $held[] = $t;
+        if (count($applied) < 1 || tag_in_text($t, $vocab[$t], "$text $body")) $applied[] = $t; else $held[] = $t;
     }
     $applied = array_slice(array_values(array_unique($applied)), 0, BM_MAX);
     $new = novel_tags($x['new_tags'] ?? [], $names, $channel, $url, $brands);
@@ -214,7 +222,7 @@ function merge_picks(array $x, array $vocab, array $applied, array $sugg, string
         $words = array_filter(preg_split('/\s+/u', mb_strtolower($t)), fn($w) => mb_strlen($w) >= 4);
         if ($words && !array_filter($words, fn($w) => !str_contains($hay, " $w ") && !str_contains($hay, " {$w}s "))) { $applied[] = $t; unset($new[$i]); }
     }
-    return [$applied, array_slice(array_values(array_unique(array_diff(array_merge($new, $held, $sugg), $applied))), 0, 4)];
+    return [$applied, array_slice(array_values(array_unique(array_diff(array_merge($new, $sugg), $applied))), 0, 3)];
 }
 
 /**
@@ -242,8 +250,22 @@ function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 
         $kw = normalize_tags(array_map('trim', explode(',', $c['keywords'])));
         $sugg = array_slice(array_values(array_diff(novel_tags($kw, $names, (string)($c['channel'] ?? ''), $url, $brands), $applied)), 0, 4);
     }
-    return ['tags' => array_merge($format, $applied), 'suggested' => $sugg, 'category' => $dr['category'] ?? ($x['category'] ?? '') ?: category_for($applied, $yt),
+    $category = $dr['category'] ?? ($x['category'] ?? '') ?: category_for($applied, $yt);
+    if (!$format) $format = type_tag($category);
+    return ['tags' => prune_types(array_merge($format, $applied)), 'suggested' => $sugg, 'category' => $category,
             'summary' => $x['summary'] ?? '', 'api' => $x ? 1 : 0, 'cost' => $x['cost'] ?? 0.0, 'llm_pending' => $deferred];
+}
+
+/** Link-type tag from the model's category when no structural format tag matched. */
+function type_tag(string $category): array {
+    $t = ['news' => 'article', 'article' => 'article', 'reference' => 'reference', 'tool' => 'tool', 'shopping' => 'product'][$category] ?? null;
+    return $t ? [$t] : [];
+}
+
+/** A specific format (book, video, paper...) makes the generic link types (article, reference, tool) redundant. */
+function prune_types(array $tags): array {
+    $generic = ['article', 'reference', 'tool'];
+    return array_diff(array_intersect($tags, BM_FORMAT_TAGS), $generic) ? array_values(array_diff($tags, $generic)) : array_values($tags);
 }
 
 /** Seconds until the next deferred OpenRouter attempt after `$attempts` failures; null = give up. */
@@ -270,10 +292,10 @@ function llm_retry(PDO $pdo, array $b, array $vocab): string {
     if (!$b['tags_edited'] || $b['refresh']) {      // edited bookmarks only during a refresh: their applied tags stay, new ones are added
         $cur = fn($sg) => array_column($pdo->query('SELECT tag FROM tags WHERE bookmark_id=' . (int)$b['id'] . ' AND suggested=' . $sg)->fetchAll(), 'tag');
         [$applied, $sugg] = merge_picks($x, $vocab, array_values(array_diff($cur(0), BM_FORMAT_TAGS)), $cur(1), '', $b['url'], [], $c['title'] . ' ' . $c['description'] . ' ' . ($x['summary'] ?? ''), $c['body']);
-        $keep = array_values(array_intersect($cur(0), BM_FORMAT_TAGS));
+        $keep = array_values(array_intersect($cur(0), BM_FORMAT_TAGS)) ?: type_tag((string)($x['category'] ?? ''));
         $pdo->prepare('DELETE FROM tags WHERE bookmark_id=?')->execute([$b['id']]);
         $ins = $pdo->prepare('INSERT OR IGNORE INTO tags(bookmark_id, tag, suggested) VALUES(?,?,?)');
-        foreach (array_merge($keep, $applied) as $t) $ins->execute([$b['id'], $t, 0]);
+        foreach (prune_types(array_merge($keep, $applied)) as $t) $ins->execute([$b['id'], $t, 0]);
         foreach ($sugg as $t) $ins->execute([$b['id'], $t, 1]);
     }
     fts_reindex((int)$b['id']);

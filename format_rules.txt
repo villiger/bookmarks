@@ -8,3 +8,4 @@ recipe | type:Recipe
 paper | type:ScholarlyArticle | host:arxiv.org | host:doi.org | url:/\.pdf($|\?)/i | meta:citation_doi | meta:citation_journal_title
 product | !book | type:Product
 repo | url:/^https?:\/\/(www\.)?(github\.com|gitlab\.com|codeberg\.org)\/[^\/]+\/[^\/]+\/?$/i
+reference | host:wikipedia.org | host:wikiwand.com | host:britannica.com | host:developer.mozilla.org
