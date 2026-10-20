@@ -1,325 +1,223 @@
 <?php
+// Hybrid tagger: rules -> keyword/alias hits -> YAKE phrases -> e5 embeddings (vocab + kNN over own bookmarks) -> fusion.
+// No generative model. Embeddings come from a multilingual-e5-small GGUF served by a short-lived llama-server.
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/crawler.php';
 
 const BM_CATEGORIES = ['dev', 'news', 'video', 'shopping', 'reference', 'article', 'tool', 'other'];
-
-/** Closed vocabulary: tags are an enum, the model cannot invent any (except the single optional new_tag). */
-function llama_schema(array $vocab, int $min, int $max): string {
-    return json_encode([
-        'type' => 'object',
-        'properties' => [
-            'tags' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => array_values($vocab)], 'minItems' => $min, 'maxItems' => $max],
-            'category' => ['type' => 'string', 'enum' => BM_CATEGORIES],
-            'new_tag' => ['type' => 'string', 'maxLength' => 24],
-        ],
-        'required' => ['tags', 'category'],
-    ]);
-}
-
-function wrapper_prefix(): string {
-    static $w = null;
-    if ($w !== null) return $w;
-    $conf = cfg('llama_wrapper') ?? 'auto';
-    $mb = (int)(cfg('llama_mem_mb') ?: 600);
-    if ($conf !== 'auto') return $w = $conf;
-    // Prefer a transient cgroup scope with a hard memory cap
-    foreach (["systemd-run --user --scope -q -p MemoryMax={$mb}M -p MemorySwapMax=0", "systemd-run --scope -q -p MemoryMax={$mb}M -p MemorySwapMax=0"] as $cand) {
-        exec($cand . ' true 2>/dev/null', $o, $rc);
-        if ($rc === 0) return $w = $cand;
-    }
-    // Fallback: virtual memory limit (generous, because the model is mmapped)
-    return $w = 'ulimit -v ' . (($mb + 1400) * 1024) . ' &&';
-}
-
-/** Run llama-cli once. Returns generated text (stdout). Throws on failure. */
-function llama_run(string $prompt, int $maxTokens, ?string $jsonSchema, array $shots = []): string {
-    $bin = cfg('llama_cli'); $model = cfg('llama_model');
-    if (!is_executable($bin) || !is_file($model)) throw new RuntimeException('llama.cpp or model not installed');
-    $chatml = "<|im_start|>system\nYou are a precise assistant that organizes bookmarks. Reply with JSON only.<|im_end|>\n";
-    foreach ($shots as [$q, $a]) $chatml .= "<|im_start|>user\n$q<|im_end|>\n<|im_start|>assistant\n$a<|im_end|>\n";
-    $chatml .= "<|im_start|>user\n$prompt<|im_end|>\n<|im_start|>assistant\n";
-    $cmd = wrapper_prefix() . ' ' . escapeshellarg($bin)
-        . ' -m ' . escapeshellarg($model)
-        . ' -c ' . (int)cfg('llama_ctx') . ' -t ' . (int)cfg('llama_threads')
-        . ' -n ' . $maxTokens . ' --temp 0.2 -no-cnv --no-display-prompt --no-warmup'
-        . ($jsonSchema ? ' --json-schema ' . escapeshellarg($jsonSchema) : '')
-        . ' -p ' . escapeshellarg($chatml);
-    $pipes = [];
-    $proc = proc_open(['sh', '-c', $cmd . ' </dev/null'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
-    if (!is_resource($proc)) throw new RuntimeException('cannot start llama');
-    stream_set_blocking($pipes[1], false); stream_set_blocking($pipes[2], false);
-    $out = $err = ''; $start = time(); $limit = (int)cfg('llama_timeout') ?: 120;
-    while (true) {
-        $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
-        $st = proc_get_status($proc);
-        if (!$st['running']) break;
-        if (time() - $start > $limit) { proc_terminate($proc, 9); throw new RuntimeException('llama timeout'); }
-        usleep(100000);
-    }
-    $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
-    fclose($pipes[1]); fclose($pipes[2]);
-    $rc = $st['exitcode'] >= 0 ? $st['exitcode'] : proc_close($proc);
-    if ($rc !== 0 && trim($out) === '') throw new RuntimeException("llama exit $rc: " . substr(trim($err), -300));
-    return $out;
-}
+const BM_FORMAT_TAGS = ['video'];      // describe the medium; never count toward the 3-topic minimum
+const BM_MIN = 3;
+const BM_MAX = 6;
+const BM_STOP = 'a aber about after all alle allem allen aller alles als also am an and andere anderen any are as at auch auf aus be been before bei being between bin bis bist both but by can could da damit dann das dass dein deine dem den der des dessen did die dies diese diesem diesen dieser dieses do doch does doing dort down du durch during each ein eine einem einen einer eines einmal er es etwas euch euer few for from fuer further für gegen get gewesen got hab habe haben had has hat hatte have he her hier hin hinter his how i ich if ihm ihn ihr ihre im in indem ins into is ist it its ja jede jedem jeden jeder jedes jetzt just kann kein keine like made make me mehr mein meine mich mir mit more most muss my nach new nicht no noch nor not nun nur ob oder of ohne on one only or other our out over own same see sehr sein seine she should sich sie sind so solche soll sollte some sondern sonst such than that the their them then there these they this to too two ueber um und under uns unser unter until up use used using very via vom von vor war waren warum was we weg weil weiter welche wenn wer werden were what when where which while who why wie wieder will wir wird wirst with wo wollen would wurde wurden you your zu zum zur zwischen über';
+const BM_ALIASES = [
+    'golang' => 'go', 'js' => 'javascript', 'machine learning' => 'ai', 'llm' => 'ai', 'artificial intelligence' => 'ai', 'open source' => 'opensource',
+    'selfhosted' => 'self-hosted', 'self hosted' => 'self-hosted', 'homelab' => 'self-hosted', 'recipe' => 'food', 'cooking' => 'food', 'sqlite' => 'database',
+    'sql' => 'database', 'postgresql' => 'database', 'docker' => 'devops', 'kubernetes' => 'devops', 'nginx' => 'devops', 'cybersecurity' => 'security',
+    'podcast' => 'music', 'nachrichten' => 'news', 'how to' => 'tutorial', 'rezept' => 'food', 'politik' => 'politics',
+];
+/** YouTube's own category -> vocabulary tag */
+const BM_YT_CATEGORY = ['music' => 'music', 'science & technology' => 'tech', 'education' => 'tutorial', 'gaming' => 'gaming', 'howto & style' => 'tutorial',
+    'news & politics' => 'news', 'comedy' => 'fun', 'entertainment' => 'fun', 'film & animation' => 'film', 'sports' => 'sports', 'travel & events' => 'travel',
+    'autos & vehicles' => 'cars', 'pets & animals' => 'animals'];
 
 function normalize_tags(array $tags): array {
     $out = [];
     foreach ($tags as $t) {
-        if (!is_string($t)) continue;
-        $t = mb_strtolower(trim($t));
-        $t = trim(preg_replace('/[^\p{L}\p{N} +#.-]+/u', '', $t));
-        if ($t === '' || mb_strlen($t) > 24) continue;
-        $out[$t] = true;
+        $t = trim(preg_replace('/[^\p{L}\p{N} +#.-]+/u', '', mb_strtolower(trim((string)$t))));
+        if ($t !== '' && mb_strlen($t) <= 24) $out[$t] = true;
     }
-    return array_slice(array_keys($out), 0, 5);
-}
-
-
-/** Known vocabulary = seed_tags_file merged with the user's most-used tags (user's first). */
-function known_tags(PDO $pdo, int $uid, int $existingLimit = 30): array {
-    $seed = [];
-    $f = cfg('seed_tags_file');
-    if ($f && is_file($f)) $seed = normalize_tags_all(file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES));
-    $q = $pdo->prepare("SELECT t.tag FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? AND t.suggested=0 GROUP BY t.tag ORDER BY COUNT(*) DESC LIMIT " . (int)$existingLimit);
-    $q->execute([$uid]);
-    $used = $q->fetchAll(PDO::FETCH_COLUMN);
-    return array_values(array_unique(array_merge($used, $seed)));
-}
-
-function normalize_tags_all(array $tags): array {
-    $out = [];
-    foreach ($tags as $t) { $t = mb_strtolower(trim((string)$t)); if ($t !== '' && $t[0] !== '#') $out[$t] = true; }
     return array_keys($out);
 }
 
-/** domain_rules.txt -> [domain => ['tags'=>[], 'category'=>?string]] */
-function domain_rules(): array {
-    static $rules = null;
-    if ($rules !== null) return $rules;
-    $rules = [];
-    $f = cfg('domain_rules_file') ?: __DIR__ . '/../domain_rules.txt';
-    foreach (is_file($f) ? file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [] as $line) {
-        $line = trim($line);
-        if ($line === '' || $line[0] === '#' || !str_contains($line, '=>')) continue;
-        [$dom, $rest] = array_map('trim', explode('=>', $line, 2));
-        [$tags, $cat] = array_pad(array_map('trim', explode('|', $rest, 2)), 2, '');
-        $rules[strtolower($dom)] = ['tags' => normalize_tags_all(array_filter(array_map('trim', explode(',', $tags)))), 'category' => in_array($cat, BM_CATEGORIES, true) ? $cat : null];
+/** Vocabulary tag => description: seed_tags.txt ("tag: description") plus the user's most-used tags. */
+function vocab(PDO $pdo, int $uid, int $limit = 60): array {
+    $v = [];
+    foreach (@file(cfg('seed_tags_file') ?: __DIR__ . '/../seed_tags.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $l) {
+        if ($l[0] === '#') continue;
+        [$t, $d] = array_pad(explode(':', $l, 2), 2, '');
+        if ($t = mb_strtolower(trim($t))) $v[$t] = trim($d) ?: $t;
     }
-    return $rules;
+    $q = $pdo->prepare("SELECT t.tag FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? AND t.suggested=0 GROUP BY t.tag ORDER BY COUNT(*) DESC LIMIT $limit");
+    $q->execute([$uid]);
+    foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $v[$t] ??= $t;
+    return $v;
 }
 
 function host_of(string $url): string { return preg_replace('/^www\./', '', strtolower(parse_url($url, PHP_URL_HOST) ?: '')); }
 
-/** @return array{tags:string[],category:?string} */
-function apply_domain_rules(string $url): array {
+/** domain_rules.txt ("domain => tag, tag | category") for this URL; first match wins for the category. */
+function domain_rule(string $url): array {
+    static $rules = null;
+    if ($rules === null) {
+        $rules = [];
+        foreach (@file(cfg('domain_rules_file') ?: __DIR__ . '/../domain_rules.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $l) {
+            if ($l[0] === '#' || !str_contains($l, '=>')) continue;
+            [$d, $r] = array_map('trim', explode('=>', $l, 2));
+            [$t, $c] = array_pad(array_map('trim', explode('|', $r, 2)), 2, '');
+            $rules[strtolower($d)] = [array_filter(array_map('trim', explode(',', $t))), in_array($c, BM_CATEGORIES, true) ? $c : null];
+        }
+    }
     $host = host_of($url); $tags = []; $cat = null;
-    foreach (domain_rules() as $dom => $r) {
-        if ($host === $dom || str_ends_with($host, '.' . $dom)) {
-            $tags = array_merge($tags, $r['tags']);
-            $cat = $cat ?? $r['category'];   // first (listed earlier) wins, e.g. music.youtube.com before youtube.com
-        }
-    }
-    return ['tags' => array_values(array_unique($tags)), 'category' => $cat];
+    foreach ($rules as $d => [$t, $c]) if ($host === $d || str_ends_with($host, ".$d")) { $tags = array_merge($tags, $t); $cat ??= $c; }
+    return ['tags' => $tags, 'category' => $cat];
 }
 
-/** YouTube's own category -> vocabulary tags (only used if the tag is in the vocabulary). */
-const BM_YT_CATEGORY = [
-    'music' => ['music'], 'science & technology' => ['tech'], 'education' => ['tutorial'], 'gaming' => ['gaming'],
-    'howto & style' => ['tutorial'], 'news & politics' => ['news'], 'comedy' => ['fun'], 'entertainment' => ['fun'],
-    'film & animation' => ['film'], 'sports' => ['sports'], 'travel & events' => ['travel'], 'autos & vehicles' => ['cars'],
-    'pets & animals' => ['animals'],
-];
-
-/** Format tags describe the medium, not the topic: they never count as topic slots or toward the LLM-skip threshold. */
-const BM_FORMAT_TAGS = ['video'];
-
-const BM_ALIASES = [
-    'golang' => 'go', 'js' => 'javascript', 'machine learning' => 'ai', 'llm' => 'ai', 'artificial intelligence' => 'ai',
-    'open source' => 'opensource', 'selfhosted' => 'self-hosted', 'self hosted' => 'self-hosted', 'recipe' => 'food',
-    'recipes' => 'food', 'cooking' => 'food', 'ingredients' => 'food', 'sql' => 'database', 'sqlite' => 'database', 'postgresql' => 'database',
-    'css3' => 'css', 'nginx' => 'devops', 'docker' => 'devops', 'kubernetes' => 'devops', 'cybersecurity' => 'security',
-    'podcast' => 'music', 'musik' => 'music', 'nachrichten' => 'news', 'tutorial' => 'tutorial', 'how to' => 'tutorial',
-];
-
-/** Does the page text give any evidence for this tag? (guards against the small model's wild guesses) */
-function tag_supported(string $tag, string $hayRaw): bool {
-    $hay = ' ' . mb_strtolower(preg_replace('/[^\p{L}\p{N}+#.-]+/u', ' ', $hayRaw)) . ' ';
-    $words = [$tag, str_replace('-', ' ', $tag)];
-    foreach (BM_ALIASES as $phrase => $t) if ($t === $tag) $words[] = $phrase;
-    foreach (BM_SUPPORT as $phrase => $t) if ($t === $tag) $words[] = $phrase;
-    foreach ($words as $w) {
-        if (str_contains($hay, ' ' . $w . ' ') || str_contains($hay, ' ' . $w . 's ')) return true;
-        if (mb_strlen($w) >= 5 && str_contains($hay, ' ' . mb_substr($w, 0, 5))) return true;   // crude stem
-    }
-    return false;
-}
-
-/** Extra evidence words (not strong enough to tag on their own). */
-const BM_SUPPORT = [
-    'song' => 'music', 'album' => 'music', 'lyrics' => 'music', 'band' => 'music', 'remaster' => 'music', 'guitar' => 'music', 'episode' => 'music',
-    'gpu' => 'hardware', 'cpu' => 'hardware', 'keyboard' => 'hardware', 'chip' => 'hardware', 'compiler' => 'tools', 'cli' => 'tools', 'app' => 'tools',
-    'programming' => 'tutorial', 'guide' => 'tutorial', 'learn' => 'tutorial', 'lecture' => 'science', 'physics' => 'science', 'research' => 'science', 'study' => 'science',
-    'neural' => 'ai', 'model' => 'ai', 'inference' => 'ai', 'gpt' => 'ai', 'html' => 'design', 'layout' => 'design', 'ui' => 'design', 'ux' => 'design',
-    'bank' => 'finance', 'stock' => 'finance', 'price' => 'shopping', 'cart' => 'shopping', 'buy' => 'shopping', 'chf' => 'shopping', 'ikea' => 'shopping',
-    'hosting' => 'self-hosted', 'server' => 'self-hosted', 'docker' => 'self-hosted', 'game' => 'gaming', 'games' => 'gaming', 'vpn' => 'security', 'encryption' => 'security',
-    'hotel' => 'travel', 'flight' => 'travel', 'recipe' => 'food', 'ingredients' => 'food', 'sql' => 'database', 'queries' => 'database',
-];
-
-/** Keyword matching of the vocabulary (+aliases) against meta keywords/title/description. */
-function keyword_tags(array $known, string $keywords, string $title, string $desc): array {
-    $norm = fn($s) => ' ' . mb_strtolower(preg_replace('/[^\p{L}\p{N}+#.-]+/u', ' ', $s)) . ' ';
-    $hay = $norm("$title $desc $keywords");
-    $kw = array_map('trim', explode(',', mb_strtolower($keywords)));
+/** Vocabulary tags (and aliases) that occur as whole words in the text. */
+function word_hits(array $names, string $text): array {
+    $hay = ' ' . mb_strtolower(preg_replace('/[^\p{L}\p{N}+#.-]+/u', ' ', $text)) . ' ';
     $hit = [];
-    foreach ($known as $t) {
-        if (mb_strlen($t) <= 2) { if (in_array($t, $kw, true)) $hit[] = $t; continue; }   // 'go' etc. only from meta keywords
-        if (str_contains($hay, ' ' . $t . ' ') || str_contains($hay, ' ' . $t . 's ')) $hit[] = $t;
+    foreach ($names as $t) if (mb_strlen($t) > 2 && (str_contains($hay, " $t ") || str_contains($hay, " {$t}s "))) $hit[] = $t;
+    foreach (BM_ALIASES as $p => $t) if (in_array($t, $names, true) && str_contains($hay, " $p ")) $hit[] = $t;
+    return array_values(array_unique($hit));
+}
+
+/** Compact YAKE: unsupervised keyphrases (1-2 words); lower score = better. Title is repeated 3x to weight it. */
+function yake(string $title, string $text, int $top = 10): array {
+    static $stop = null; $stop ??= array_flip(explode(' ', BM_STOP));
+    $sents = [];
+    foreach (preg_split('/(?<=[.!?;|])\s+|\n+|\s[-–—]\s/u', str_repeat("$title. ", 3) . $text, -1, PREG_SPLIT_NO_EMPTY) as $s) {
+        if (preg_match_all('/[\p{L}\p{N}][\p{L}\p{N}+#]*/u', $s, $m)) $sents[] = $m[0];
     }
-    foreach (BM_ALIASES as $phrase => $tag) {
-        if (in_array($tag, $known, true) && !in_array($tag, $hit, true) && str_contains($hay, ' ' . $phrase . ' ')) $hit[] = $tag;
+    $tf = $cap = $sset = $pos = $L = $R = [];
+    foreach ($sents as $si => $ws) foreach ($ws as $i => $raw) {
+        $k = mb_strtolower($raw);
+        if (isset($stop[$k]) || mb_strlen($k) < 3 || ctype_digit($k)) continue;
+        $tf[$k] = ($tf[$k] ?? 0) + 1;
+        $sset[$k][$si] = 1; $pos[$k][] = $si;
+        if ($i > 0 && $raw !== $k && mb_substr($raw, 0, 1) === mb_strtoupper(mb_substr($raw, 0, 1))) $cap[$k] = ($cap[$k] ?? 0) + 1;
+        $p = $i > 0 ? mb_strtolower($ws[$i - 1]) : null;
+        if ($p !== null && !isset($stop[$p])) { $L[$k][$p] = 1; $R[$p][$k] = 1; }
     }
-    return $hit;
-}
-
-function category_from_tags(array $tags, bool $yt): string {
-    if ($yt) return 'video';
-    $dev = ['php', 'javascript', 'go', 'rust', 'devops', 'css', 'database', 'opensource', 'self-hosted', 'linux', 'security'];
-    if (array_intersect($tags, $dev)) return 'dev';
-    foreach (['news' => 'news', 'shopping' => 'shopping', 'docs' => 'reference', 'tools' => 'tool', 'tutorial' => 'article'] as $t => $c) if (in_array($t, $tags, true)) return $c;
-    return 'other';
-}
-
-function tag_prompt(string $host, string $title, string $channel, string $desc, string $text, array $vocab, array $already, int $slots): string {
-    return "Domain: $host\nTitle: " . mb_substr($title, 0, 200)
-        . ($channel !== '' ? "\nChannel: $channel" : '')
-        . "\nDescription: " . mb_substr($desc, 0, 300)
-        . "\nText: $text"
-        . "\nAllowed tags: " . implode(', ', $vocab)
-        . "\nAlready chosen: " . ($already ? implode(', ', $already) : 'none')
-        . "\nChoose up to $slots more tags that clearly describe the page's topic, ONLY from the allowed tags (fewer is better; none is fine).";
-}
-
-function builtin_shots(): array {
-    $v = ['php', 'javascript', 'rust', 'linux', 'devops', 'tools', 'opensource', 'food', 'travel', 'shopping', 'hardware', 'news', 'music', 'tutorial'];
-    return [
-        [tag_prompt('github.com', 'BurntSushi/ripgrep', '', 'ripgrep recursively searches directories for a regex pattern', 'Fast grep alternative written in Rust, respects gitignore', $v, ['opensource'], 3),
-         '{"tags":["rust","tools"],"category":"dev"}'],
-        [tag_prompt('example-shop.ch', 'Mechanical Keyboard 75% Hot-swappable', '', 'Wireless keyboard, CHF 129', 'Add to cart. Delivery 2-3 days. Switches: linear.', $v, ['shopping'], 3),
-         '{"tags":["hardware"],"category":"shopping"}'],
-        [tag_prompt('someblog.example', 'Why I stopped making to-do lists', '', 'A personal essay about attention', 'Last year I threw away my lists and started noticing what actually mattered to me.', $v, [], 4),
-         '{"tags":[],"category":"article"}'],
-    ];
-}
-
-/** User-corrected bookmarks from the same domain make the best few-shot examples. */
-function user_shots(PDO $pdo, int $uid, string $host, array $vocab): array {
-    if ($uid <= 0 || $host === '') return [];
-    $st = $pdo->prepare('SELECT id, title, description, body, url, category FROM bookmarks WHERE user_id=? AND tags_edited=1 ORDER BY id DESC LIMIT 200');
-    $st->execute([$uid]);
-    $shots = [];
-    foreach ($st->fetchAll() as $b) {
-        if (host_of($b['url']) !== $host) continue;
-        $t = $pdo->prepare('SELECT tag FROM tags WHERE bookmark_id=? AND suggested=0');
-        $t->execute([$b['id']]);
-        $tags = $t->fetchAll(PDO::FETCH_COLUMN);
-        if (!$tags) continue;
-        $shots[] = [tag_prompt($host, (string)$b['title'], '', (string)$b['description'], mb_substr((string)$b['body'], 0, 300), array_slice($vocab, 0, 30), [], 4),
-                    json_encode(['tags' => array_slice($tags, 0, 4), 'category' => $b['category'] ?: 'other'])];
-        if (count($shots) >= 2) break;
+    if (!$tf) return [];
+    $n = count($tf); $mean = array_sum($tf) / $n; $std = sqrt(array_sum(array_map(fn($v) => ($v - $mean) ** 2, $tf)) / $n); $max = max($tf);
+    $S = [];
+    foreach ($tf as $k => $f) {
+        sort($pos[$k]);
+        $rel = 1 + (count($L[$k] ?? []) + count($R[$k] ?? [])) / $f * ($f / $max);
+        $S[$k] = ($rel * log(3 + $pos[$k][intdiv(count($pos[$k]), 2)]))
+               / (($cap[$k] ?? 0) / (1 + log($f)) + $f / ($mean + $std) / $rel + count($sset[$k]) / count($sents) / $rel);
     }
-    return $shots;
-}
-
-const BM_MAX_TOPIC = 6;
-const BM_MIN_TOPIC = 3;
-
-function llama_schema_new(int $min): string {
-    return json_encode(['type' => 'object', 'properties' => ['new_tags' => ['type' => 'array', 'items' => ['type' => 'string', 'maxLength' => 24], 'minItems' => $min, 'maxItems' => 3]], 'required' => ['new_tags']]);
-}
-
-/** Free-form tag candidates: lowercase, 1-2 words, not a duplicate/synonym (shared 5-char stem) of an existing tag. */
-function fresh_tags(array $cands, array $existing, string $channel = ''): array {
-    $out = [];
-    $ch = preg_replace('/[^a-z0-9]+/', '', mb_strtolower($channel));
-    foreach (normalize_tags($cands) as $t) {
-        if (mb_strlen($t) < 3 || preg_match('/lowercase|words|topic|tags?$|channel|artist/', $t)) continue;   // echoes of the prompt
-        $flat = preg_replace('/[^a-z0-9]+/', '', $t);
-        if ($ch !== '' && $flat !== '' && (str_contains($ch, $flat) || str_contains($flat, $ch) || str_contains($flat, 'vevo'))) continue;   // channel names are not topics
-        if (count(explode(' ', $t)) > 2) continue;
-        foreach (array_merge($existing, $out) as $e) {
-            if ($e === $t || (mb_strlen($t) >= 5 && mb_strlen($e) >= 5 && mb_substr($e, 0, 5) === mb_substr($t, 0, 5))) continue 2;
-            if (isset(BM_ALIASES[$t]) && BM_ALIASES[$t] === $e) continue 2;
+    $cand = [];
+    foreach ($sents as $ws) {
+        $ks = array_map('mb_strtolower', $ws);
+        foreach ($ks as $i => $k) for ($len = 1; $len <= 2 && $i + $len <= count($ks); $len++) {
+            $g = array_slice($ks, $i, $len);
+            if (count(array_filter($g, fn($x) => isset($S[$x]))) < $len) break;   // stopword inside: stop extending
+            $key = implode(' ', $g); $cand[$key] = ($cand[$key] ?? 0) + 1;
         }
-        $out[] = $t;
+    }
+    $score = [];
+    foreach ($cand as $g => $f) { $ws = explode(' ', $g); $score[$g] = array_product(array_map(fn($w) => $S[$w], $ws)) / ($f * (1 + array_sum(array_map(fn($w) => $S[$w], $ws)))); }
+    asort($score);
+    $out = [];
+    foreach (array_keys($score) as $g) {
+        foreach ($out as $o) if (array_intersect(explode(' ', $o), explode(' ', $g))) continue 2;   // no word overlap with a better phrase
+        $out[] = $g;
+        if (count($out) >= $top) break;
     }
     return $out;
 }
 
-/**
- * Full tagging pipeline: rules first, LLM picks from the closed vocabulary, then free-form suggestions
- * until applied + suggested >= 3 topic tags. Format tags (video) are added on top and never count.
- * @param array $c crawl() result
- * @return array{tags:string[],suggested:string[],category:string,llm:bool}
- */
-function tag_bookmark(string $url, array $c, array $known, ?PDO $pdo = null, int $uid = 0): array {
-    $yt = youtube_id($url) !== null;
-    $title = $c['title'] ?: $url;
-    $dr = apply_domain_rules($url);
-    $format = $yt ? ['video'] : [];
-    $topic = array_merge($dr['tags'], keyword_tags($known, $c['keywords'], $title, $c['description'] . ($yt ? ' ' . $c['body'] : '')));
-    if ($yt) foreach (BM_YT_CATEGORY[mb_strtolower((string)($c['yt_category'] ?? ''))] ?? [] as $t) if (in_array($t, $known, true)) $topic[] = $t;
-    foreach ($topic as $i => $t) if (in_array($t, BM_FORMAT_TAGS, true)) { $format[] = $t; unset($topic[$i]); }
-    $format = array_values(array_unique($format));
-    $tags = array_slice(array_values(array_unique($topic)), 0, BM_MAX_TOPIC);
-    $category = $dr['category'];
-    if (count($tags) >= BM_MIN_TOPIC) {
-        return ['tags' => array_merge($format, $tags), 'suggested' => [], 'category' => $category ?? category_from_tags($tags, $yt), 'llm' => false];
+/** Embeddings via a short-lived llama-server (multilingual-e5-small). Texts need their "query: " / "passage: " prefix. */
+function embed(array $texts): array {
+    static $proc = null; $port = (int)(cfg('embed_port') ?: 8099);
+    if (!$proc) {
+        $proc = proc_open([cfg('llama_server') ?: '/opt/llama.cpp/llama-server', '-m', cfg('embed_model') ?: '/opt/models/multilingual-e5-small-Q8_0.gguf', '--embeddings', '--pooling', 'mean',
+            '-c', '512', '-t', (string)(cfg('embed_threads') ?: 2), '-np', '1', '--host', '127.0.0.1', '--port', (string)$port, '--no-webui'], [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
+        register_shutdown_function(function () use (&$proc) { if ($proc) { proc_terminate($proc); proc_close($proc); } });
+        for ($i = 0; $i < 60 && !str_contains((string)@file_get_contents("http://127.0.0.1:$port/health"), 'ok'); $i++) usleep(500000);
     }
-    $host = host_of($url);
-    $channel = $yt ? (string)($c['channel'] ?? '') : '';
-    $kwLine = ($yt && trim($c['keywords']) !== '') ? 'Keywords: ' . mb_substr($c['keywords'], 0, 250) . '. ' . (!empty($c['yt_category']) ? 'Category: ' . $c['yt_category'] . '. ' : '') : '';
-    $text = $kwLine . mb_substr(clean_text($c['body']), 0, max(300, 1200 - mb_strlen($kwLine) - mb_strlen($title) - mb_strlen($c['description'])));
-    $evidence = $title . ' ' . $c['description'] . ' ' . $c['keywords'] . ' ' . $channel . ' ' . $c['body'];
-
-    // 1) closed vocabulary pick
-    $vocab = array_values(array_diff($known, $tags, BM_FORMAT_TAGS));
-    $slots = BM_MAX_TOPIC - count($tags);
-    mt_srand(crc32($url));                     // deterministic shuffle: the 0.5B model is biased to the first enum entries
-    shuffle($vocab);
-    $user = tag_prompt($host, $title, $channel, $c['description'], $text, $vocab, $tags, $slots);
-    $shots = ($pdo ? user_shots($pdo, $uid, $host, $vocab) : []) ?: builtin_shots();
-    $raw = llama_run($user, 100, llama_schema($vocab, 1, $slots), $shots);
-    $a = strpos($raw, '{'); $b = strrpos($raw, '}');
-    $j = ($a !== false && $b !== false) ? json_decode(substr($raw, $a, $b - $a + 1), true) : null;
-    if (!is_array($j) || !isset($j['tags']) || !is_array($j['tags'])) throw new RuntimeException('LLM returned invalid JSON: ' . substr($raw, 0, 200));
-    $sugg = [];
-    foreach (array_values(array_intersect(normalize_tags($j['tags']), $vocab)) as $t) {
-        // picks with no evidence on the page are dropped (the 0.5B model guesses 'food', 'cars', ... when unsure)
-        if (tag_supported($t, $evidence)) $tags[] = $t;
+    $out = [];
+    foreach (array_chunk($texts, 16) as $chunk) {
+        $ch = curl_init("http://127.0.0.1:$port/v1/embeddings");
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 60, CURLOPT_POSTFIELDS => json_encode(['model' => 'e5', 'input' => array_map(fn($t) => mb_substr($t, 0, 1500), $chunk)]), CURLOPT_HTTPHEADER => ['Content-Type: application/json']]);
+        $j = json_decode((string)curl_exec($ch), true);
+        if (empty($j['data'])) throw new RuntimeException('embedding server failed');
+        foreach ($j['data'] as $d) $out[] = $d['embedding'];
     }
-    $tags = array_slice(array_values(array_unique($tags)), 0, BM_MAX_TOPIC);
-    $llmCat = in_array($j['category'] ?? '', BM_CATEGORIES, true) ? $j['category'] : 'other';
-
-    // 2) free-form suggestions until applied + suggested >= 3
-    $missing = BM_MIN_TOPIC - count($tags) - count($sugg);
-    if ($missing > 0) {
-        $q = "Domain: $host\nTitle: " . mb_substr($title, 0, 200) . ($channel !== '' ? "\nChannel: $channel" : '') . "\nDescription: " . mb_substr($c['description'], 0, 300) . "\nText: $text"
-           . "\nExisting tags: " . implode(', ', array_merge($tags, $sugg)) . "\nGive 3 new topic tags (never the channel or artist name): lowercase, one or two words, specific to the topic, not synonyms of the existing tags.";
-        try {
-            $raw2 = llama_run($q, 60, llama_schema_new(min(3, $missing + 1)), []);
-            $a = strpos($raw2, '{'); $b = strrpos($raw2, '}');
-            $j2 = ($a !== false && $b !== false) ? json_decode(substr($raw2, $a, $b - $a + 1), true) : null;
-            if (is_array($j2) && is_array($j2['new_tags'] ?? null)) $sugg = array_merge($sugg, fresh_tags($j2['new_tags'], array_merge($known, $tags, $sugg), $channel));
-        } catch (Throwable $e) { /* keep what we have */ }
-    }
-    $sugg = array_slice(array_values(array_unique(array_diff($sugg, $tags))), 0, 5);
-    return ['tags' => array_merge($format, $tags), 'suggested' => $sugg, 'category' => $category ?? $llmCat, 'llm' => true];
+    return $out;
 }
 
-function llm_summary(string $title, string $body): string {
-    $prompt = "Write one short sentence (max 30 words) summarizing this web page.\nTitle: " . mb_substr($title, 0, 200) . "\nText: " . mb_substr($body, 0, 1200) . "\nSummary:";
-    $raw = llama_run($prompt, 70, null);
-    $raw = trim(preg_replace('/\[end of text\]|<\|im_end\|>/', '', $raw));
-    return mb_substr(preg_replace('/\s+/u', ' ', $raw), 0, 300);
+function dot(array $a, array $b): float { $s = 0.0; foreach ($a as $i => $x) $s += $x * $b[$i]; return $s; }
+function vec_pack(array $v): string { return pack('f*', ...$v); }
+function vec_unpack(string $b): array { return array_values(unpack('f*', $b)); }
+
+/** Embedding of every vocabulary tag description ("passage: ..."), cached in tag_vec until the text changes. */
+function vocab_vectors(PDO $pdo, array $vocab): array {
+    $have = [];
+    foreach ($pdo->query('SELECT tag, h, vec FROM tag_vec') as $r) $have[$r['tag']] = $r;
+    $todo = array_filter($vocab, fn($d, $t) => ($have[$t]['h'] ?? '') !== md5($d), ARRAY_FILTER_USE_BOTH);
+    if ($todo) {
+        $vs = embed(array_map(fn($d) => "passage: $d", array_values($todo)));
+        $up = $pdo->prepare('INSERT OR REPLACE INTO tag_vec(tag,h,vec) VALUES(?,?,?)');
+        foreach (array_keys($todo) as $i => $t) { $up->execute([$t, md5($todo[$t]), vec_pack($vs[$i])]); $have[$t] = ['vec' => vec_pack($vs[$i])]; }
+    }
+    return array_map(fn($t) => vec_unpack($have[$t]['vec']), array_combine(array_keys($vocab), array_keys($vocab)));
+}
+
+/** Tags of the user's most similar bookmarks (edited ones count 1.5x): tag => share of the neighbour weight. */
+function knn_tags(PDO $pdo, int $uid, array $vec, int $k = 5, float $min = 0.94): array {
+    $near = [];
+    $st = $pdo->prepare('SELECT id, embedding, tags_edited FROM bookmarks WHERE user_id=? AND embedding IS NOT NULL');
+    $st->execute([$uid]);
+    foreach ($st as $b) { $s = dot($vec, vec_unpack($b['embedding'])); if ($s >= $min) $near[] = [$s * ($b['tags_edited'] ? 1.5 : 1), $b['id']]; }
+    rsort($near);
+    $w = []; $tot = 0;
+    foreach (array_slice($near, 0, $k) as [$s, $id]) {
+        $tot += $s;
+        $t = $pdo->prepare('SELECT tag FROM tags WHERE bookmark_id=? AND suggested=0'); $t->execute([$id]);
+        foreach ($t->fetchAll(PDO::FETCH_COLUMN) as $tag) $w[$tag] = ($w[$tag] ?? 0) + $s;
+    }
+    return $tot ? array_map(fn($x) => $x / $tot, $w) : [];
+}
+
+function category_for(array $tags, bool $yt): string {
+    if ($yt) return 'video';
+    if (array_intersect($tags, ['php', 'javascript', 'go', 'rust', 'devops', 'css', 'database', 'opensource', 'self-hosted', 'linux', 'security', 'docs'])) return 'dev';
+    foreach (['news' => 'news', 'shopping' => 'shopping', 'tools' => 'tool', 'tutorial' => 'article'] as $t => $c) if (in_array($t, $tags, true)) return $c;
+    return 'other';
+}
+
+/** Optional hook for extra new-tag suggestions from an external service (e.g. OpenRouter). Not implemented. */
+function suggest_external(array $crawl, array $have): array { return []; }
+
+/**
+ * Tag one crawled page.
+ * @return array{tags:string[],suggested:string[],category:string,embedding:string}
+ */
+function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 0): array {
+    $yt = youtube_id($url) !== null;
+    $title = $c['title'] ?: $url;
+    $names = array_keys($vocab);
+    $dr = domain_rule($url);
+    $text = $c['description'] . ' ' . $c['keywords'] . ' ' . $c['body'];
+    $score = [];                                                                 // tag => fused score
+    $add = function (array $tags, float $w) use (&$score, $names) { foreach ($tags as $t) if (in_array($t, $names, true) || $w >= 1) $score[$t] = ($score[$t] ?? 0) + $w; };
+
+    $add($dr['tags'], 1.0);                                                      // 1. domain rules
+    $add(word_hits($names, "$title {$c['description']} {$c['keywords']}"), 1.0); // 2. keywords/aliases in title, description, meta keywords
+    if ($yt && isset(BM_YT_CATEGORY[$k = mb_strtolower((string)$c['yt_category'])])) $add([BM_YT_CATEGORY[$k]], 1.0);
+    $phrases = yake($title, $text);                                              // 3. YAKE phrases: vocabulary hits score, the rest become suggestions
+    $add(word_hits($names, implode(' ', $phrases)), 0.5);
+
+    $vec = embed(["query: $title. " . ($c['channel'] ?? '') . ' ' . mb_substr($text, 0, 900)])[0];   // 4. embedding vs. vocabulary
+    $sims = [];
+    foreach (vocab_vectors($pdo, $vocab) as $t => $v) $sims[$t] = dot($vec, $v);
+    $mean = array_sum($sims) / count($sims); $std = sqrt(array_sum(array_map(fn($s) => ($s - $mean) ** 2, $sims)) / count($sims)) ?: 1;
+    $z = array_map(fn($s) => ($s - $mean) / $std, $sims);
+    $zmax = max($z);
+    foreach ($z as $t => $zz) if ($zz >= (float)(cfg('embed_z') ?: 2.0) && $zz >= 0.6 * $zmax) $score[$t] = ($score[$t] ?? 0) + min(1, $zz / 3) * 0.6;
+    if ($uid) foreach (knn_tags($pdo, $uid, $vec) as $t => $share) if (isset($score[$t]) || $share >= 0.6) $score[$t] = ($score[$t] ?? 0) + 0.4 * $share;   // booster, or strong agreement   // 5. the user's own similar bookmarks
+
+    foreach (BM_FORMAT_TAGS as $f) unset($score[$f]);
+    arsort($score);
+    $applied = array_slice(array_keys(array_filter($score, fn($s) => $s >= 0.5)), 0, BM_MAX);
+    $sugg = array_slice(array_keys(array_filter($score, fn($s) => $s < 0.5)), 0, 3);            // weaker vocabulary candidates
+    $fresh = array_values(array_filter($phrases, fn($p) => mb_strlen($p) <= 24 && !preg_match('/^\d/', $p)
+        && !in_array($p, $names, true) && !array_filter($names, fn($n) => mb_substr($n, 0, 5) === mb_substr($p, 0, 5) && mb_strlen($n) >= 5)
+        && !str_contains(preg_replace('/[^a-z0-9]/', '', mb_strtolower(($c['channel'] ?? '') . host_of($url))), preg_replace('/[^a-z0-9]/', '', $p))));
+    $sugg = array_merge($sugg, array_slice($fresh, 0, max(2, BM_MIN - count($applied) - count($sugg)))); // 6. fill up to >= 3 applied+suggested
+    $sugg = array_slice(array_values(array_unique(array_diff($sugg, $applied))), 0, 5);
+    $format = ($yt || in_array('video', $dr['tags'], true)) ? ['video'] : [];
+    return ['tags' => array_merge($format, $applied), 'suggested' => $sugg, 'category' => $dr['category'] ?? category_for($applied, $yt), 'embedding' => vec_pack($vec)];
 }

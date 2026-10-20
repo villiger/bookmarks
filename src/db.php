@@ -21,6 +21,8 @@ function db(): PDO {
     if (!$has('tags', 'suggested')) $pdo->exec('ALTER TABLE tags ADD COLUMN suggested INTEGER NOT NULL DEFAULT 0');
     if (!$has('bookmarks', 'url_key')) $pdo->exec("ALTER TABLE bookmarks ADD COLUMN url_key TEXT NOT NULL DEFAULT ''");
     if (!$has('bookmarks', 'scheme_guessed')) $pdo->exec('ALTER TABLE bookmarks ADD COLUMN scheme_guessed INTEGER NOT NULL DEFAULT 0');
+    if (!$has('bookmarks', 'embedding')) $pdo->exec('ALTER TABLE bookmarks ADD COLUMN embedding BLOB');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS tag_vec (tag TEXT PRIMARY KEY, h TEXT NOT NULL, vec BLOB NOT NULL)');
     foreach ($pdo->query("SELECT id, url FROM bookmarks WHERE url_key=''")->fetchAll() as $r) {
         $pdo->prepare('UPDATE bookmarks SET url_key=? WHERE id=?')->execute([url_key($r['url']), $r['id']]);
     }
@@ -103,7 +105,7 @@ function search_bookmarks(int $uid, string $q, string $tag, int $limit = 100): a
 /** Vocabulary offered to the user for autocomplete: seed tags + their own tags. */
 function user_vocabulary(int $uid): array {
     require_once __DIR__ . '/tagger.php';
-    return known_tags(db(), $uid, 200);
+    return array_keys(vocab(db(), $uid, 200));
 }
 
 /** One bookmark of this user as a card row (no highlights), or null. */

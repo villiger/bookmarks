@@ -1,0 +1,10 @@
+1 | https://www.beszel.dev | done | article | devops,food | 0
+2 | https://www.monitorix.org | done | dev | linux,opensource,php | 0
+3 | https://www.youtube.com/watch?v=b4xjias39sE | done | video | gamedev,gaming,video | 1
+4 | https://www.youtube.com/watch?v=6amzFFhCIGc | done | video | fun,gamedev?,gaming?,self-hosted?,video | 0
+5 | https://www.youtube.com/watch?v=qYq_V-wyfyA | done | video | gaming,tech,video | 1
+6 | https://www.youtube.com/watch?v=rB_Fqt6UUxU | done | video | ancient?,endgame crisis?,gamedev?,gaming,stellaris-style?,video | 0
+7 | https://en.wikipedia.org/wiki/London_Monster | done | reference | artificialflowers?,policeoffense? | 0
+8 | https://www.youtube.com/watch?v=QgZVVFgrr-E | done | video | gaming,music,tutorial,video | 0
+9 | https://smallboatsmonthly.com/article/tenderly/ | done | article | features?,fun,structure? | 0
+10 | https://gartsideboats.com/collections/all/products/4-9-metre-16ft-cutter-pudel-design-239 | error |  |  | 0

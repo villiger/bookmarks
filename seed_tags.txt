@@ -1,35 +1,40 @@
-php
-javascript
-go
-rust
-linux
-devops
-ai
-design
-css
-security
-database
-tutorial
-video
-music
-news
-science
-finance
-shopping
-travel
-food
-health
-tools
-self-hosted
-docs
-opensource
-productivity
-gaming
-hardware
-career
-fun
-tech
-film
-sports
-cars
-animals
+# tag: short description (embedded once; edit freely, the cache refreshes when the text changes)
+php: php language, laravel, symfony, composer, wordpress, backend web development
+javascript: javascript, typescript, node.js, react, frontend, browser, npm
+go: go golang programming language, goroutines
+rust: rust programming language, cargo, memory safety, systems programming
+linux: linux, unix, kernel, shell, command line, distributions, arch, debian, ubuntu
+devops: devops, docker, containers, kubernetes, ci/cd, deployment, nginx, servers, monitoring, infrastructure
+ai: artificial intelligence, machine learning, llm, neural networks, chatgpt, models, inference, deep learning
+design: design, ui, ux, typography, layout, graphics, visual, figma
+css: css, stylesheets, flexbox, grid, responsive web layout, styling
+security: security, privacy, encryption, vulnerabilities, hacking, passwords, vpn, malware
+database: database, sql, sqlite, postgresql, mysql, queries, data storage, indexes
+tutorial: tutorial, how-to, guide, learn, course, step by step, beginner, lesson
+video: video, film clip, movie, youtube, watch, stream
+music: music, song, album, band, artist, concert, lyrics, playlist, podcast, audio
+news: news, current events, journalism, breaking, headlines, newspaper, report
+politics: politics, government, elections, parliament, war, geopolitics, policy, president
+science: science, research, physics, chemistry, biology, space, astronomy, study, experiment
+finance: finance, money, banking, stocks, investing, economy, crypto, taxes, insurance
+shopping: shopping, buy, price, product, store, cart, order, discount, sale
+travel: travel, trip, hotel, flight, vacation, destination, tourism, city guide
+food: food, recipe, cooking, ingredients, kitchen, baking, restaurant, meal
+health: health, medicine, fitness, nutrition, sleep, mental health, doctor, exercise
+tools: tools, utility, app, software, command line tool, extension, productivity tool
+self-hosted: self-hosted, selfhosting, homelab, home server, open source alternative, docker compose
+docs: documentation, manual, reference, api reference, specification, wiki
+opensource: open source, github, repository, license, community, contributors, free software
+productivity: productivity, notes, tasks, workflow, time management, organization, habits
+gaming: gaming, video games, trailer, console, playstation, steam, esports, minecraft
+hardware: hardware, computer parts, electronics, gadgets, cpu, gpu, keyboard, devices, raspberry pi
+career: career, jobs, hiring, interview, resume, work, salary, management
+fun: fun, funny, humor, comedy, memes, entertainment, games for fun
+tech: technology, tech industry, gadgets, software industry, startups, innovation
+film: film, movie, cinema, animation, series, tv show, director, actor
+sports: sports, football, soccer, tennis, olympics, fitness competition, team, match
+cars: cars, automotive, vehicles, electric cars, driving, motorcycle, engine
+animals: animals, pets, wildlife, dogs, cats, nature, zoo
+history: history, historical, ancient, war history, century, archaeology, biography
+art: art, painting, illustration, museum, photography, creative, drawing
+business: business, startup, marketing, company, management, entrepreneurship, sales

@@ -73,6 +73,17 @@ function youtube_details(string $id): array {
     return $out;
 }
 
+/** Optional (config youtube_api_key): topicCategories (Wikipedia slugs) + snippet tags as extra keywords. */
+function youtube_api_keywords(string $id): string {
+    $key = cfg('youtube_api_key');
+    if (!$key) return '';
+    $r = http_get('https://www.googleapis.com/youtube/v3/videos?part=topicDetails,snippet&id=' . $id . '&key=' . rawurlencode($key));
+    $j = $r['error'] ? null : json_decode($r['body'], true);
+    $it = $j['items'][0] ?? [];
+    $topics = array_map(fn($u) => str_replace('_', ' ', urldecode(basename($u))), $it['topicDetails']['topicCategories'] ?? []);
+    return implode(', ', array_merge($topics, $it['snippet']['tags'] ?? []));
+}
+
 function clean_text(string $s): string {
     return trim(preg_replace('/\s+/u', ' ', $s));
 }
@@ -106,7 +117,7 @@ function crawl(string $url): array {
             $out['yt_category'] = $vd['category'];
             $out['image'] = "https://i.ytimg.com/vi/$yt/hqdefault.jpg";
             $out['favicon'] = 'https://www.youtube.com/favicon.ico';
-            $out['keywords'] = implode(', ', $vd['keywords']);
+            $out['keywords'] = implode(', ', array_filter([implode(', ', $vd['keywords']), youtube_api_keywords($yt)]));
             $out['final_url'] = 'https://www.youtube.com/watch?v=' . $yt;
             return $out;
         }

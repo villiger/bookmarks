@@ -1,36 +1,67 @@
-# Tagging benchmark: before vs after
+# Tagging benchmark
 
-Same 15 URLs (`bench/urls.txt`), run on villiger (1 vCPU, Qwen2.5-0.5B Q4_K_M, `-c 2048 -t 2`), no user data, vocabulary = seed tags only.
-Raw output: `bench/before.txt`, `bench/after.txt`. "llm" = the model was called.
+Three generations, same URLs, run on villiger (1 vCPU):
+- **Qwen v0**: first LLM tagger (`before.txt`).
+- **Qwen final**: tuned LLM tagger, closed vocabulary + min-3 rule (`qwen-final*.txt`).
+- **Hybrid**: rules + YAKE + e5 embeddings + kNN, no generative model (`hybrid.txt`, current code).
 
-| # | URL | Before | After | Verdict |
-|---|-----|--------|-------|---------|
-| 1 | github.com/ggml-org/llama.cpp | devops, ai, golang, c, c++ | opensource, ai | better (no wrong languages) |
-| 2 | YouTube, Rick Astley | video, music, remaster, riff, ramp | video | mixed (junk gone, `music` lost) |
-| 3 | YouTube, Rich Hickey talk | dev, music, self-hosted, tools | video | better |
-| 4 | Wikipedia SQLite | ref, tool, self-hosted, database, other | database | better |
-| 5 | theguardian.com/technology | technology, business, live, google, cloud | news | better |
-| 6 | php.net PDO manual | dev, php, tool, data-access, database-extensions | php, docs, self-hosted | better (`self-hosted` is still wrong) |
-| 7 | joelonsoftware.com | ERROR HTTP 403 | ERROR HTTP 403 | n/a (site blocks the crawler) |
-| 8 | ikea.com product | dev, news, video, shopping, tool | shopping | better |
-| 9 | bbcgoodfood lasagne | food, homemade, easy, preparation, recipe | food | better |
-| 10 | immich.app | video, self-hosted (category dev) | video, self-hosted (category article) | same tags (`video` wrong in both); category slightly worse |
-| 11 | MDN grid-template-columns | css, grid, template, columns, property | docs, css | better |
-| 12 | news.ycombinator.com item | dev, news, video, tool, self-hosted | news | better |
-| 13 | tagesschau.de | news, travel, finance, tool, self-hosted | news | better |
-| 14 | stackoverflow question | ERROR HTTP 403 | ERROR HTTP 403 | n/a (blocks crawler) |
-| 15 | open.spotify.com show | music, tools, self-hosted, video | music | better |
+"applied" = tags actually applied, "sugg" = dimmed click-to-accept suggestions; `video` is not counted.
 
-## Summary (13 URLs that could be crawled)
-- Better 11, mixed 1, same 1, worse 0.
-- The old output was mostly noise: free-form invented tags (`ramp`, `riff`, `data-access`) and the old "prefer these" hint made the model pad every result with `self-hosted`/`tool`/`video`. Now every tag is from the closed vocabulary and an LLM pick must be backed by words on the page.
-- Cost: fewer tags (average 4.4 before, 1.5 after) so recall is lower. Examples: no `music` on the Rick Astley video, no `ai` or `opensource` beyond the obvious. Wrong tags that remain: `self-hosted` on php.net, `video` on immich.
-- Average time per URL (crawl + tag): 4.5 s before, 7.3 s after. Slower, because the prompt is longer (vocabulary list plus 3 few-shot examples).
-- LLM skipped: 1/13 before (7.7 %, by the old keyword shortcut), 0/13 after. The new rule "skip LLM at 3 or more rule tags" never fired on this set; domain rules give 1 to 2 tags, so the model still runs. It would fire for pages with good meta keywords.
-- Peak RAM (max RSS of the whole run, incl. the mmapped 491 MB model): 706 MB before, 652 MB after. The systemd service cap is 700 MB.
-- No `new_tag` suggestion was produced on this set (the 0.5B model almost never offers one).
+## Summary
+| | Qwen v0 | Qwen final | Hybrid |
+|--|--|--|--|
+| 13 crawlable URLs: applied >= 3 | 77% (5 tags each, mostly junk) | 15% | 8% |
+| applied + suggested >= 3 | n/a | 85% | **100%** |
+| avg applied / applied+sugg | 4.4 / n/a | 1.5 / 3.1 | 1.5 / 3.8 |
+| 6 YouTube URLs: applied >= 3 | 0% | 17% | 17% |
+| applied + sugg >= 3 | n/a | 50% | **100%** |
+| user's 9 crawlable bookmarks: applied >= 3 / a+s >= 3 | n/a | n/a | 44% / 100% |
+| avg time per URL (crawl + tag) | 4.5 s | 7.3 to 10 s | **0.6 to 1.6 s** |
+| peak RAM (max RSS) | 706 MB | 652 MB | **203 MB** |
+| model on disk | 491 MB | 491 MB | 132 MB |
+| `src/tagger.php` | 325 lines (final Qwen state) | | 223 lines |
+
+Applied >= 3 is low for the hybrid by design: only evidence-backed tags are applied; the rest is offered as suggestions to fill the 3 minimum. (Qwen v0's 77% came from padding with irrelevant tags.)
+
+## Per URL: Qwen final vs Hybrid (13 crawlable of 15; joelonsoftware and stackoverflow return 403)
+| URL | Qwen final | Hybrid | Verdict |
+|--|--|--|--|
+| llama.cpp | opensource, ai | ai, opensource (sugg: llm inference, gguf, hardware) | same |
+| YouTube Rick Astley | video | video, music (sugg: gonna give) | better |
+| YouTube Simple Made Easy | video, design, database, tech | video, design, tech | better (database gone) |
+| Wikipedia SQLite | database | database, self-hosted (sugg: sqlite) | mixed (self-hosted wrong) |
+| Guardian technology | news | news (sugg: tech, cloud) | same |
+| php.net PDO | php, docs, self-hosted | php, docs, database | better |
+| IKEA product | shopping | shopping (sugg: billy) | same |
+| BBC lasagne | food | food (sugg: lasagne, sauce) | same |
+| immich.app | video, self-hosted | self-hosted (sugg: server, privacy) | better (video was wrong) |
+| MDN grid-template | docs, css | docs, css (sugg: grid, columns) | same |
+| Hacker News item | news | news (sugg: hacker news) | same |
+| tagesschau | news | news (sugg: nachrichten) | same |
+| Spotify show | music | music (sugg: player, web) | same |
+
+Better 4, same 8, mixed 1, worse 0. The topic quality is similar to Qwen final; the gains are speed (10 s to under 1 s), RAM, reliable suggestions, and no hallucinated tags.
+
+## YouTube (6 URLs): Qwen final vs Hybrid
+Despacito: Qwen video, music (sugg latin, pop); Hybrid video, music (sugg despacito, daddy yankee, gaming). Linus git talk: tech, tutorial both. The Egg: design, film, tutorial both. GTA VI trailer: music, gaming both. Rammstein: music both. One video was unavailable (both only get `video, music` from the generic page).
+Verdict: same quality, 6x faster. Tags for videos remain thin because only title, channel, YouTube keywords/category and 800 chars of description are available; the optional YouTube API key adds topic categories.
+
+## The user's real bookmarks (before = Qwen era, after = hybrid, edited ones untouched)
+| # | URL | Before | After |
+|--|--|--|--|
+| 1 | beszel.dev | devops, food | devops (sugg: lightweight, server) |
+| 2 | monitorix.org | linux, opensource, php | linux, opensource, self-hosted (sugg: open source, system) |
+| 3 | YouTube b4xjias39sE | gamedev, gaming, video | unchanged (edited) |
+| 4 | YouTube 6amzFFhCIGc | fun, video (sugg gamedev, gaming, self-hosted) | video, fun (sugg: politics, history, krieg, deutschland, gaming) |
+| 5 | YouTube qYq_V-wyfyA | gaming, tech, video | unchanged (edited) |
+| 6 | YouTube rB_Fqt6UUxU | gaming, video (sugg ancient, endgame crisis, stellaris-style) | video, gaming (sugg: final boss, game) |
+| 7 | Wikipedia London Monster | none (sugg artificialflowers, policeoffense) | none (sugg: attacks, london monster, women) |
+| 8 | YouTube QgZVVFgrr-E (Blender) | gaming, music, tutorial, video | video, art, music, tutorial (sugg: house, speed modeling) |
+| 9 | smallboatsmonthly | fun (sugg features, structure) | design, fun (sugg: harris, tenderly dinghy) |
+| 10 | gartsideboats | error (HTTP 429) | not retagged (still error) |
+
+Judgement: 1, 2, 4, 6, 8, 9 better (junk such as food, php, gamedev guesses gone), 7 unchanged (needs a history/crime tag in the vocabulary; the suggestions are sensible), 4 gets the right topic only as a suggestion (German query vs English tag descriptions).
 
 ## Caveats
-- The 0.5B model needed these guard rails to be usable. It copies the first enum entries and few-shot answers (an early variant tagged nearly everything `php` or `food`), so the vocabulary is shuffled per URL, the examples include one with an empty result, and picks without textual evidence are dropped.
-- Bookmarks already stored before this change keep their old tags (for example beszel.dev has `food`). Edit them on the card or delete and re-add.
-- Two of 15 URLs were blocked by the sites (403), so the sample for judgment is 13.
+- e5-small similarities are compressed (0.88 to 0.95 between unrelated pages), so the embedding is used through outlier z-scores, and kNN only boosts other evidence (it needs a larger bookmark base to help).
+- Broad words in the vocabulary still produce occasional wrong tags (self-hosted on SQLite).

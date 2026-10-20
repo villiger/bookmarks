@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   error TEXT,
   attempts INTEGER NOT NULL DEFAULT 0,
   tags_edited INTEGER NOT NULL DEFAULT 0,
+  embedding BLOB,                                -- float32 e5 vector of the page text
   created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
   UNIQUE(user_id, url)
 );
@@ -47,3 +48,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS bookmarks_fts USING fts5(
   tokenize = 'unicode61 remove_diacritics 2'
 );
 
+
+-- cached e5 embeddings of the vocabulary descriptions (h = md5 of the description)
+CREATE TABLE IF NOT EXISTS tag_vec (tag TEXT PRIMARY KEY, h TEXT NOT NULL, vec BLOB NOT NULL);
