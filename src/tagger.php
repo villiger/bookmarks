@@ -123,6 +123,17 @@ function apply_domain_rules(string $url): array {
     return ['tags' => array_values(array_unique($tags)), 'category' => $cat];
 }
 
+/** YouTube's own category -> vocabulary tags (only used if the tag is in the vocabulary). */
+const BM_YT_CATEGORY = [
+    'music' => ['music'], 'science & technology' => ['tech'], 'education' => ['tutorial'], 'gaming' => ['gaming'],
+    'howto & style' => ['tutorial'], 'news & politics' => ['news'], 'comedy' => ['fun'], 'entertainment' => ['fun'],
+    'film & animation' => ['film'], 'sports' => ['sports'], 'travel & events' => ['travel'], 'autos & vehicles' => ['cars'],
+    'pets & animals' => ['animals'],
+];
+
+/** Format tags describe the medium, not the topic: they never count as topic slots or toward the LLM-skip threshold. */
+const BM_FORMAT_TAGS = ['video'];
+
 const BM_ALIASES = [
     'golang' => 'go', 'js' => 'javascript', 'machine learning' => 'ai', 'llm' => 'ai', 'artificial intelligence' => 'ai',
     'open source' => 'opensource', 'selfhosted' => 'self-hosted', 'self hosted' => 'self-hosted', 'recipe' => 'food',
@@ -186,7 +197,7 @@ function tag_prompt(string $host, string $title, string $channel, string $desc, 
         . "\nText: $text"
         . "\nAllowed tags: " . implode(', ', $vocab)
         . "\nAlready chosen: " . ($already ? implode(', ', $already) : 'none')
-        . "\nChoose up to $slots more tags that clearly describe the page, ONLY from the allowed tags (fewer is better; none is fine). Add new_tag only if no allowed tag fits.";
+        . "\nChoose up to $slots more tags that clearly describe the page's topic, ONLY from the allowed tags (fewer is better; none is fine).";
 }
 
 function builtin_shots(): array {
@@ -220,8 +231,34 @@ function user_shots(PDO $pdo, int $uid, string $host, array $vocab): array {
     return $shots;
 }
 
+const BM_MAX_TOPIC = 6;
+const BM_MIN_TOPIC = 3;
+
+function llama_schema_new(int $min): string {
+    return json_encode(['type' => 'object', 'properties' => ['new_tags' => ['type' => 'array', 'items' => ['type' => 'string', 'maxLength' => 24], 'minItems' => $min, 'maxItems' => 3]], 'required' => ['new_tags']]);
+}
+
+/** Free-form tag candidates: lowercase, 1-2 words, not a duplicate/synonym (shared 5-char stem) of an existing tag. */
+function fresh_tags(array $cands, array $existing, string $channel = ''): array {
+    $out = [];
+    $ch = preg_replace('/[^a-z0-9]+/', '', mb_strtolower($channel));
+    foreach (normalize_tags($cands) as $t) {
+        if (mb_strlen($t) < 3 || preg_match('/lowercase|words|topic|tags?$|channel|artist/', $t)) continue;   // echoes of the prompt
+        $flat = preg_replace('/[^a-z0-9]+/', '', $t);
+        if ($ch !== '' && $flat !== '' && (str_contains($ch, $flat) || str_contains($flat, $ch) || str_contains($flat, 'vevo'))) continue;   // channel names are not topics
+        if (count(explode(' ', $t)) > 2) continue;
+        foreach (array_merge($existing, $out) as $e) {
+            if ($e === $t || (mb_strlen($t) >= 5 && mb_strlen($e) >= 5 && mb_substr($e, 0, 5) === mb_substr($t, 0, 5))) continue 2;
+            if (isset(BM_ALIASES[$t]) && BM_ALIASES[$t] === $e) continue 2;
+        }
+        $out[] = $t;
+    }
+    return $out;
+}
+
 /**
- * Full tagging pipeline: rules first, LLM only to fill remaining slots.
+ * Full tagging pipeline: rules first, LLM picks from the closed vocabulary, then free-form suggestions
+ * until applied + suggested >= 3 topic tags. Format tags (video) are added on top and never count.
  * @param array $c crawl() result
  * @return array{tags:string[],suggested:string[],category:string,llm:bool}
  */
@@ -229,36 +266,55 @@ function tag_bookmark(string $url, array $c, array $known, ?PDO $pdo = null, int
     $yt = youtube_id($url) !== null;
     $title = $c['title'] ?: $url;
     $dr = apply_domain_rules($url);
-    $tags = array_values(array_unique(array_merge($dr['tags'], keyword_tags($known, $c['keywords'], $title, $c['description']))));
-    $tags = array_slice($tags, 0, 4);
+    $format = $yt ? ['video'] : [];
+    $topic = array_merge($dr['tags'], keyword_tags($known, $c['keywords'], $title, $c['description'] . ($yt ? ' ' . $c['body'] : '')));
+    if ($yt) foreach (BM_YT_CATEGORY[mb_strtolower((string)($c['yt_category'] ?? ''))] ?? [] as $t) if (in_array($t, $known, true)) $topic[] = $t;
+    foreach ($topic as $i => $t) if (in_array($t, BM_FORMAT_TAGS, true)) { $format[] = $t; unset($topic[$i]); }
+    $format = array_values(array_unique($format));
+    $tags = array_slice(array_values(array_unique($topic)), 0, BM_MAX_TOPIC);
     $category = $dr['category'];
-    if (count($tags) >= 3) {
-        return ['tags' => $tags, 'suggested' => [], 'category' => $category ?? category_from_tags($tags, $yt), 'llm' => false];
+    if (count($tags) >= BM_MIN_TOPIC) {
+        return ['tags' => array_merge($format, $tags), 'suggested' => [], 'category' => $category ?? category_from_tags($tags, $yt), 'llm' => false];
     }
-    // LLM fills the remaining slots from the closed vocabulary
-    $vocab = array_values(array_diff($known, $tags));
-    $slots = 4 - count($tags);
     $host = host_of($url);
-    $text = mb_substr(clean_text($c['body']), 0, max(300, 1200 - mb_strlen($title) - mb_strlen($c['description'])));
+    $channel = $yt ? (string)($c['channel'] ?? '') : '';
+    $kwLine = ($yt && trim($c['keywords']) !== '') ? 'Keywords: ' . mb_substr($c['keywords'], 0, 250) . '. ' . (!empty($c['yt_category']) ? 'Category: ' . $c['yt_category'] . '. ' : '') : '';
+    $text = $kwLine . mb_substr(clean_text($c['body']), 0, max(300, 1200 - mb_strlen($kwLine) - mb_strlen($title) - mb_strlen($c['description'])));
+    $evidence = $title . ' ' . $c['description'] . ' ' . $c['keywords'] . ' ' . $channel . ' ' . $c['body'];
+
+    // 1) closed vocabulary pick
+    $vocab = array_values(array_diff($known, $tags, BM_FORMAT_TAGS));
+    $slots = BM_MAX_TOPIC - count($tags);
     mt_srand(crc32($url));                     // deterministic shuffle: the 0.5B model is biased to the first enum entries
     shuffle($vocab);
-    $user = tag_prompt($host, $title, $yt ? (string)($c['channel'] ?? '') : '', $c['description'], $text, $vocab, $tags, $slots);
+    $user = tag_prompt($host, $title, $channel, $c['description'], $text, $vocab, $tags, $slots);
     $shots = ($pdo ? user_shots($pdo, $uid, $host, $vocab) : []) ?: builtin_shots();
-    $schema = llama_schema($vocab, 0, $slots);
-    $raw = llama_run($user, 100, $schema, $shots);
+    $raw = llama_run($user, 100, llama_schema($vocab, 1, $slots), $shots);
     $a = strpos($raw, '{'); $b = strrpos($raw, '}');
     $j = ($a !== false && $b !== false) ? json_decode(substr($raw, $a, $b - $a + 1), true) : null;
     if (!is_array($j) || !isset($j['tags']) || !is_array($j['tags'])) throw new RuntimeException('LLM returned invalid JSON: ' . substr($raw, 0, 200));
-    $evidence = $title . ' ' . $c['description'] . ' ' . $c['keywords'] . ' ' . ($c['channel'] ?? '') . ' ' . $c['body'];
-    $add = array_values(array_filter(array_intersect(normalize_tags($j['tags']), $vocab), fn($t) => tag_supported($t, $evidence)));
-    $tags = array_slice(array_values(array_unique(array_merge($tags, $add))), 0, 4);
     $sugg = [];
-    if (!empty($j['new_tag']) && is_string($j['new_tag'])) {
-        $n = normalize_tags([$j['new_tag']]);
-        if ($n && !in_array($n[0], $known, true) && !in_array($n[0], $tags, true)) $sugg[] = $n[0];
+    foreach (array_values(array_intersect(normalize_tags($j['tags']), $vocab)) as $t) {
+        // picks with no evidence on the page are dropped (the 0.5B model guesses 'food', 'cars', ... when unsure)
+        if (tag_supported($t, $evidence)) $tags[] = $t;
     }
+    $tags = array_slice(array_values(array_unique($tags)), 0, BM_MAX_TOPIC);
     $llmCat = in_array($j['category'] ?? '', BM_CATEGORIES, true) ? $j['category'] : 'other';
-    return ['tags' => $tags, 'suggested' => $sugg, 'category' => $category ?? $llmCat, 'llm' => true];
+
+    // 2) free-form suggestions until applied + suggested >= 3
+    $missing = BM_MIN_TOPIC - count($tags) - count($sugg);
+    if ($missing > 0) {
+        $q = "Domain: $host\nTitle: " . mb_substr($title, 0, 200) . ($channel !== '' ? "\nChannel: $channel" : '') . "\nDescription: " . mb_substr($c['description'], 0, 300) . "\nText: $text"
+           . "\nExisting tags: " . implode(', ', array_merge($tags, $sugg)) . "\nGive 3 new topic tags (never the channel or artist name): lowercase, one or two words, specific to the topic, not synonyms of the existing tags.";
+        try {
+            $raw2 = llama_run($q, 60, llama_schema_new(min(3, $missing + 1)), []);
+            $a = strpos($raw2, '{'); $b = strrpos($raw2, '}');
+            $j2 = ($a !== false && $b !== false) ? json_decode(substr($raw2, $a, $b - $a + 1), true) : null;
+            if (is_array($j2) && is_array($j2['new_tags'] ?? null)) $sugg = array_merge($sugg, fresh_tags($j2['new_tags'], array_merge($known, $tags, $sugg), $channel));
+        } catch (Throwable $e) { /* keep what we have */ }
+    }
+    $sugg = array_slice(array_values(array_unique(array_diff($sugg, $tags))), 0, 5);
+    return ['tags' => array_merge($format, $tags), 'suggested' => $sugg, 'category' => $category ?? $llmCat, 'llm' => true];
 }
 
 function llm_summary(string $title, string $body): string {

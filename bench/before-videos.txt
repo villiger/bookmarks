@@ -1,0 +1,7 @@
+url                                                            | tags                                     | category  | llm  | sec
+https://www.youtube.com/watch?v=kJQP7kiw5Fk                    | video                                    | video     | yes  | 7.8
+https://www.youtube.com/watch?v=4XpnKHJAok8                    | video                                    | video     | yes  | 6.2
+https://www.youtube.com/watch?v=PUP7U5vTMM0                    | video,music                              | video     | yes  | 6.0
+https://www.youtube.com/watch?v=h6fcK_fRYaI                    | video                                    | video     | yes  | 7.4
+https://www.youtube.com/watch?v=QdBZY2fkU-0                    | video                                    | video     | yes  | 6.9
+https://www.youtube.com/watch?v=NeQM1c-XCDc                    | video                                    | video     | yes  | 7.5

@@ -61,11 +61,16 @@ function youtube_id(string $url): ?string {
     return null;
 }
 
-function youtube_description(string $id): string {
+/** description (800 chars), keywords[] and category from the watch page's ytInitialPlayerResponse */
+function youtube_details(string $id): array {
+    $out = ['desc' => '', 'keywords' => [], 'category' => ''];
     $r = http_get('https://www.youtube.com/watch?v=' . $id . '&hl=en');
-    if ($r['error'] || !preg_match('/"shortDescription":("(?:[^"\\\\]|\\\\.)*")/', $r['body'], $m)) return '';
-    $d = json_decode($m[1]);
-    return is_string($d) ? mb_substr(clean_text($d), 0, 500) : '';
+    if ($r['error']) return $out;
+    $b = $r['body'];
+    if (preg_match('/"shortDescription":("(?:[^"\\\\]|\\\\.)*")/', $b, $m) && is_string($d = json_decode($m[1]))) $out['desc'] = mb_substr(clean_text($d), 0, 800);
+    if (preg_match('/"keywords":(\[(?:"(?:[^"\\\\]|\\\\.)*",?)*\])/', $b, $m) && is_array($k = json_decode($m[1], true))) $out['keywords'] = array_slice(array_map('strval', $k), 0, 25);
+    if (preg_match('/"category":("(?:[^"\\\\]|\\\\.)*")/', $b, $m) && is_string($c = json_decode($m[1]))) $out['category'] = $c;
+    return $out;
 }
 
 function clean_text(string $s): string {
@@ -85,7 +90,7 @@ function to_utf8(string $html, string $type): string {
 
 /** Crawl one URL. Returns fields: title, description, keywords, image, favicon, body. Throws RuntimeException on failure. */
 function crawl(string $url): array {
-    $out = ['title' => '', 'description' => '', 'keywords' => '', 'image' => '', 'favicon' => '', 'body' => '', 'channel' => '', 'final_url' => $url];
+    $out = ['title' => '', 'description' => '', 'keywords' => '', 'image' => '', 'favicon' => '', 'body' => '', 'channel' => '', 'yt_category' => '', 'final_url' => $url];
     $origin = (($p = parse_url($url)) && isset($p['host'])) ? $p['scheme'] . '://' . $p['host'] . (isset($p['port']) ? ':' . $p['port'] : '') : '';
     $yt = youtube_id($url);
     if ($yt) {
@@ -96,11 +101,12 @@ function crawl(string $url): array {
             $out['description'] = isset($j['author_name']) ? 'YouTube video by ' . $j['author_name'] : '';
             $out['channel'] = $j['author_name'] ?? '';
             // Real video description (first ~500 chars) from the watch page's ytInitialPlayerResponse
-            $vd = youtube_description($yt);
-            $out['body'] = clean_text(($j['title'] ?? '') . ' ' . ($j['author_name'] ?? '') . ' ' . $vd);
+            $vd = youtube_details($yt);
+            $out['body'] = clean_text(($j['title'] ?? '') . ' ' . ($j['author_name'] ?? '') . ' ' . $vd['desc']);
+            $out['yt_category'] = $vd['category'];
             $out['image'] = "https://i.ytimg.com/vi/$yt/hqdefault.jpg";
             $out['favicon'] = 'https://www.youtube.com/favicon.ico';
-            $out['keywords'] = 'youtube video';
+            $out['keywords'] = implode(', ', $vd['keywords']);
             $out['final_url'] = 'https://www.youtube.com/watch?v=' . $yt;
             return $out;
         }

@@ -28,3 +28,8 @@ gaming
 hardware
 career
 fun
+tech
+film
+sports
+cars
+animals

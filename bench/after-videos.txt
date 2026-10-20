@@ -1,0 +1,9 @@
+url                                                            | tags                                     | category  | llm  | sec
+https://www.youtube.com/watch?v=kJQP7kiw5Fk                    | video,music                              | video     | yes  | 15.3 | Luis Fonsi - Despacito ft. Daddy Yankee  (suggested: latin,pop)
+https://www.youtube.com/watch?v=4XpnKHJAok8                    | video,tech,tutorial                      | video     | yes  | 8.4 | Tech Talk: Linus Torvalds on git  (suggested: git,source,control)
+https://www.youtube.com/watch?v=PUP7U5vTMM0                    | video,music                              | video     | yes  | 8.2 | - YouTube  (suggested: audio)
+https://www.youtube.com/watch?v=h6fcK_fRYaI                    | video,design,film,tutorial               | video     | no   | 1.4 | The Egg - A Short Story
+https://www.youtube.com/watch?v=QdBZY2fkU-0                    | video,music,gaming                       | video     | yes  | 10.1 | Grand Theft Auto VI Trailer 1
+https://www.youtube.com/watch?v=NeQM1c-XCDc                    | video,music                              | video     | yes  | 13.4 | Rammstein - Deutschland (Official Video)  (suggested: metal)
+
+SUMMARY n=6 | applied>=3: 17% | applied+suggested>=3: 50% | avg applied 1.7 | avg applied+suggested 2.8 | llm skipped 17% | avg 9.5s
