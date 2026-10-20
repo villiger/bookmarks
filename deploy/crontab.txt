@@ -1,0 +1,1 @@
+* * * * * /usr/bin/php /srv/bookmarks/bin/worker.php >> /srv/bookmarks/data/worker.log 2>&1
