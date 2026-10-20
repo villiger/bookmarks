@@ -50,9 +50,10 @@ input,textarea{font:inherit;color:var(--fg)}
 form.inline{display:inline}
 
 /* ---- add + search ---- */
-.addurl{display:flex;gap:8px;margin:0 0 10px;padding:6px;background:var(--surface);border:1px solid var(--bd);border-radius:var(--r);box-shadow:var(--sh)}
+.addurl{display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:6px 6px 6px 14px;background:color-mix(in srgb,var(--ac) 8%,var(--surface));border:1px solid color-mix(in srgb,var(--ac) 38%,var(--bd));border-radius:var(--r);box-shadow:var(--sh);color:var(--ac)}
+.addurl>svg{flex:none}.addurl input{color:var(--fg)}.addurl input::placeholder{color:color-mix(in srgb,var(--ac) 55%,var(--mut))}
 .addurl:focus-within,.searchbox:focus-within{border-color:var(--ac);box-shadow:0 0 0 3px var(--ac-soft)}
-.addurl input{flex:1;min-width:0;border:0;background:none;padding:9px 10px;outline:0}.addurl button{min-height:40px}
+.addurl input{flex:1;min-width:0;border:0;background:none;padding:9px 2px;outline:0}.addurl button{min-height:40px}
 .searchbox{display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--surface);border:1px solid var(--bd);border-radius:var(--r);color:var(--mut);box-shadow:var(--sh)}
 .searchbox input{flex:1;min-width:0;border:0;background:none;padding:12px 0;outline:0}
 #addmsg{margin:2px 4px}

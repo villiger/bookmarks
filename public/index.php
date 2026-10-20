@@ -44,7 +44,7 @@ Import a bookmarks file (Safari: File ▸ Export ▸ Bookmarks): <input type="fi
 <form method="post" action="logout.php"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><button class="rowbtn" title="<?= h($user['email']) ?>">Log out <small><?= h($user['email']) ?></small></button></form></section>
 </div></details></header>
 <form class="addurl" hx-post="add.php" hx-target="#results" hx-swap="afterbegin" hx-on:bm-added="this.reset()">
-<input type="text" name="urls" placeholder="Paste a link to save…" aria-label="URL to save" required autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go"><button type="submit" class="primary">Save</button></form>
+<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><input type="text" name="urls" placeholder="Paste a link to save…" aria-label="URL to save" required autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go"><button type="submit" class="primary">Save</button></form>
 <div id="addmsg" class="err"></div>
 <?php if (!empty($_GET['imp'])): ?><p class="count"><?= h($_GET['imp']) ?></p><?php endif; ?>
 <datalist id="vocab"><?php foreach (user_vocabulary($uid) as $v): ?><option value="<?= h($v) ?>"><?php endforeach; ?></datalist>
