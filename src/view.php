@@ -78,5 +78,5 @@ function render_edit(array $r): string {
         . '<label>Title<input name="title" maxlength="300" value="' . h($r['title']) . '"></label>'
         . '<label>Description<textarea name="summary" rows="4" maxlength="600">' . h($shown) . '</textarea></label>'
         . '<div class="meta">' . h($r['url']) . '</div>'
-        . '<button type="submit">Save</button> <button type="button" hx-get="card.php?id=' . $id . '" hx-target="#b' . $id . '" hx-swap="outerHTML">Cancel</button></form></article>';
+        . '<div class="btns"><button type="submit">Save</button><button type="button" hx-get="card.php?id=' . $id . '" hx-target="#b' . $id . '" hx-swap="outerHTML">Cancel</button></div></form></article>';
 }
