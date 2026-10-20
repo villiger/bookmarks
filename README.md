@@ -1,6 +1,6 @@
 # Bookmarks
 
-Tiny self-hosted, multi-user bookmarks: PHP + SQLite (FTS5) + htmx, background worker with llama.cpp (Qwen2.5-0.5B) for tags.
+Tiny self-hosted, multi-user bookmarks: PHP + SQLite (FTS5) + htmx; tags and summaries from rules plus one OpenRouter call per bookmark.
 
 ## Setup
 1. PHP 8 with pdo_sqlite, curl, dom, mbstring.

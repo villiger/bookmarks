@@ -10,6 +10,6 @@ Same 17 URLs as `bench/urls.txt`, single run on villiger (`bench/openrouter-only
 | avg time per URL | 3.1 s | 2.2 s |
 | API calls / est. cost per 1000 bookmarks | 14 of 15 / $0.08 | 17 of 17 / $0.10 |
 | peak RAM, local model on disk | 205 MB, 132 MB | none (about 75 MB for the PHP worker) |
-| `src/*.php` lines | 1313 (tagger 425) | 1151 (tagger 267) |
+| `src/*.php` lines | 1313 (tagger 425) | 1158 (tagger 272) |
 
 Quality: comparable. Titles, summaries (2-3 sentences, in the page language), format tags and suggestions are the same quality; the model now also decides the category. Without the embedding gate it sometimes adds one loosely related vocabulary tag (`linux` and `devops` on SQLite, `devops` on Joel Test, `science` on Spotify/Amazon when it had to reach 3 applied). Mitigations in place: only the first picks plus rule hits are trusted, later ones need page-text support, brand names are dropped. A prompt tweak removed the catch-all tags (`tools`, `tech`, `business`) that the first run produced.
