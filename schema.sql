@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   url_key TEXT NOT NULL DEFAULT '',
   scheme_guessed INTEGER NOT NULL DEFAULT 0,
   title TEXT,
+  title_orig TEXT,                               -- page title as crawled; title is the cleaned one
   description TEXT,
   summary TEXT,                                  -- short neutral summary shown on the card (LLM), else description is cut cleanly
   favicon TEXT,
@@ -58,3 +59,4 @@ CREATE TABLE IF NOT EXISTS tag_vec (tag TEXT PRIMARY KEY, h TEXT NOT NULL, vec B
 
 -- OpenRouter calls per month (cap in config)
 CREATE TABLE IF NOT EXISTS api_usage (month TEXT PRIMARY KEY, calls INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS api_model_usage (month TEXT NOT NULL, model TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (month, model));

@@ -17,7 +17,7 @@ function render_card(array $r): string {
     $title = $r['h_title'] ?? null;
     $titleHtml = $title ? hl($title) : h($r['title'] ?: $r['url']);
     if (trim(strip_tags($titleHtml)) === '') $titleHtml = h($r['url']);
-    $shown = ($r['summary'] ?? '') !== '' ? $r['summary'] : clean_cut((string)($r['description'] ?: mb_substr((string)$r['body'], 0, 400)));
+    $shown = ($r['summary'] ?? '') !== '' ? $r['summary'] : ($r['description'] ? clean_cut((string)$r['description']) : prose_excerpt((string)$r['body']));
     $desc = (!empty($r['h_desc']) && ($r['summary'] ?? '') === '') ? hl($r['h_desc']) : h($shown);
     $snip = (!empty($r['h_body']) && strpos($r['h_body'], "\x02") !== false) ? '<p class="snip">' . hl($r['h_body']) . '</p>' : '';
     $fav = $r['favicon'] ? '<img class="fav" src="' . h($r['favicon']) . '" alt="" loading="lazy" referrerpolicy="no-referrer" width="16" height="16">' : '<span class="fav"></span>';

@@ -31,13 +31,14 @@ while (true) {
         $dup = $pdo->prepare('SELECT id FROM bookmarks WHERE user_id=? AND url_key=? AND id<>?');
         $dup->execute([$b['user_id'], $finalKey, $id]);
         if ($dup->fetchColumn()) { delete_bookmark($id, (int)$b['user_id']); echo date('c') . " merged #$id into existing {$finalUrl}\n"; continue; }
-        $title = $c['title'] ?: $b['title'] ?: $b['url'];
+        $titleOrig = $c['title'] ?: $b['title'] ?: $b['url'];
+        $title = clean_title($titleOrig, $finalUrl, (string)$c['site_name']);
         $desc = $c['description'];
         $vocab = vocab($pdo, (int)$b['user_id']);
         $r = tag_bookmark($finalUrl, $c, $vocab, $pdo, (int)$b['user_id']);
         $pdo->beginTransaction();
-        $pdo->prepare("UPDATE bookmarks SET title=?, description=?, summary=?, favicon=?, image=?, body=?, category=?, status='done', error=NULL, crawl_source=?, embedding=?, url=?, url_key=?, scheme_guessed=0 WHERE id=?")
-            ->execute([$title, $desc, $r['summary'], $c['favicon'], $c['image'], $c['body'], $r['category'], $src, $r['embedding'], $finalUrl, $finalKey, $id]);
+        $pdo->prepare("UPDATE bookmarks SET title=?, title_orig=?, description=?, summary=?, favicon=?, image=?, body=?, category=?, status='done', error=NULL, crawl_source=?, embedding=?, url=?, url_key=?, scheme_guessed=0 WHERE id=?")
+            ->execute([$title, $titleOrig, $desc, $r['summary'], $c['favicon'], $c['image'], $c['body'], $r['category'], $src, $r['embedding'], $finalUrl, $finalKey, $id]);
         if (!$b['tags_edited']) {      // never overwrite tags the user corrected
             $pdo->prepare('DELETE FROM tags WHERE bookmark_id=?')->execute([$id]);
             $ins = $pdo->prepare('INSERT OR IGNORE INTO tags(bookmark_id, tag, suggested) VALUES(?,?,?)');

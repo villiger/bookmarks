@@ -19,7 +19,8 @@ return [
     'youtube_api_key' => '',  // optional YouTube Data API v3 key (topicCategories); empty = skip
     // Optional OpenRouter step for short/blocked pages (empty key = off). Never commit a real key.
     'openrouter_key'   => '',
-    'openrouter_model' => 'google/gemini-2.5-flash-lite',
+    // First = primary, the rest are tried automatically on errors/429 (OpenRouter `models` fallback). Avoid :free variants.
+    'openrouter_models' => ['google/gemini-2.5-flash-lite', 'mistralai/mistral-small-3.2-24b-instruct', 'meta-llama/llama-3.1-8b-instruct'],
     'openrouter_cap'   => 3000,   // calls per month
     'max_attempts' => 3,
     // Starter tag vocabulary, one tag per line (edit freely). Merged with the most-used existing tags.

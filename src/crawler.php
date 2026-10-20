@@ -104,7 +104,7 @@ function to_utf8(string $html, string $type): string {
 
 /** Crawl one URL. Returns fields: title, description, keywords, image, favicon, body. Throws RuntimeException on failure. */
 function crawl(string $url, bool $alt = false): array {
-    $out = ['title' => '', 'description' => '', 'keywords' => '', 'image' => '', 'favicon' => '', 'body' => '', 'channel' => '', 'yt_category' => '', 'final_url' => $url];
+    $out = ['title' => '', 'description' => '', 'keywords' => '', 'image' => '', 'favicon' => '', 'body' => '', 'channel' => '', 'yt_category' => '', 'site_name' => '', 'author' => '', 'final_url' => $url];
     $origin = (($p = parse_url($url)) && isset($p['host'])) ? $p['scheme'] . '://' . $p['host'] . (isset($p['port']) ? ':' . $p['port'] : '') : '';
     $yt = youtube_id($url);
     if ($yt) {
@@ -148,7 +148,7 @@ function crawl(string $url, bool $alt = false): array {
     $t = $xp->query('//title');
     $title = $og('og:title') ?: ($t && $t->length ? clean_text($t->item(0)->textContent) : '');
     $out['title'] = mb_substr($title, 0, 300);
-    $out['description'] = mb_substr($og('og:description') ?: $val("//meta[translate(@name,'DESCRIPTION','description')='description']"), 0, 600);
+    $out['description'] = mb_substr($og('og:description') ?: $val("//meta[translate(@name,'DESCRIPTION','description')='description']") ?: $val("//meta[@name='DC.Description' or @name='DC.description']"), 0, 600);
     $out['keywords'] = mb_substr($val("//meta[translate(@name,'KEYWORDS','keywords')='keywords']"), 0, 300);
     $img = $og('og:image') ?: $og('twitter:image');
     $out['image'] = $img ? resolve_url($img, $final) : $out['image'];
@@ -160,20 +160,21 @@ function crawl(string $url, bool $alt = false): array {
     $fp = parse_url($final);
     $finalOrigin = isset($fp['host']) ? $fp['scheme'] . '://' . $fp['host'] . (isset($fp['port']) ? ':' . $fp['port'] : '') : $origin;
     $out['favicon'] = ($fav ? resolve_url($fav, $final) : '') ?: $finalOrigin . '/favicon.ico';
+    $sd = structured_data($xp, strtolower($fp['host'] ?? ''));                 // structured data first
+    $out['site_name'] = $og('og:site_name');
+    if ($sd['title'] && (preg_match('/(^|\.)amazon\./', $fp['host'] ?? '') || !$og('og:title'))) $out['title'] = mb_substr($sd['title'], 0, 300);
+    if ($sd['description']) $out['description'] = mb_substr($sd['description'], 0, 600);
+    elseif (mb_strtolower($out['description']) === mb_strtolower($out['title'])) $out['description'] = '';
+    if ($sd['image'] && preg_match('~^https?://~i', $sd['image'])) $out['image'] = $sd['image'];
+    $out['author'] = mb_substr($sd['author'], 0, 120);
     // main text
     foreach (['script', 'style', 'nav', 'header', 'footer', 'aside', 'noscript', 'svg', 'form', 'iframe', 'template'] as $tag) {
         foreach (iterator_to_array($doc->getElementsByTagName($tag)) as $n) $n->parentNode?->removeChild($n);
     }
-    $noise = "//*[not(self::body or self::html or self::main or self::article)][@class or @id][contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'cookie') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'consent') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'banner') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'newsletter') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sidebar') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'breadcrumb') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'popup') or @role='navigation' or @role='banner' or @role='dialog']";
+    $noise = "//*[not(self::body or self::html or self::main or self::article)][@class or @id][contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'cookie') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'consent') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'banner') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'newsletter') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sidebar') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'breadcrumb') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'popup') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'menu') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'footer') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'navbar') or @role='navigation' or @role='banner' or @role='dialog']";
     foreach (iterator_to_array($xp->query($noise) ?: []) as $n) $n->parentNode?->removeChild($n);
-    $root = null;
-    foreach (['//main', '//article', '//body'] as $q) {
-        $n = $xp->query($q);
-        if ($n && $n->length && mb_strlen(clean_text($n->item(0)->textContent)) > 200) { $root = $n->item(0); break; }
-        if ($n && $n->length && !$root) $root = $n->item(0);
-    }
-    $text = $root ? clean_text($root->textContent) : '';
-    $out['body'] = mb_substr($text, 0, 1500);
+    $text = main_text($doc, $xp);
+    $out['body'] = mb_substr(preg_match('/(^|\.)amazon\./', $fp['host'] ?? '') && $sd['description'] ? $sd['description'] : trim($sd['description'] . ' ' . $text), 0, 1500);
     if (preg_match('/just a moment|attention required|access denied|captcha|are you a robot|verify you are human|pardon our interruption/i', $out['title'])
         || preg_match('/enable javascript and cookies|checking your browser|cf-chl/i', $text . $html)) {
         throw new RuntimeException('Blocked: challenge page');
@@ -253,4 +254,93 @@ function clean_cut(string $s, int $max = 220): string {
     if (preg_match('/^(.{40,}[.!?])(?=\s|$)/us', $head, $m)) return $m[1];       // last sentence end inside the limit
     $cut = mb_strrpos($head, ' ');
     return rtrim(mb_substr($head, 0, $cut > 40 ? $cut : $max), " ,;:-–—") . '…';
+}
+
+/** Readability-style main text: drop link-dense blocks, prefer main/article, else the block with the most non-link text. */
+function main_text(DOMDocument $doc, DOMXPath $xp): string {
+    $len = fn(DOMNode $n) => mb_strlen(clean_text($n->textContent));
+    $links = function (DOMNode $n) use ($xp, $len) { $s = 0; foreach ($xp->query('.//a', $n) as $a) $s += $len($a); return $s; };
+    $blocks = iterator_to_array($xp->query('//ul | //ol | //table | //dl | //div | //p | //td | //li'));
+    foreach (array_reverse(array_slice($blocks, 0, 1500)) as $n) {            // innermost first
+        $t = $len($n);
+        if ($t > 15 && $links($n) / $t > 0.5) $n->parentNode?->removeChild($n);
+    }
+    foreach (['//main', '//article', '//*[@role="main"]'] as $q) {
+        $n = $xp->query($q)->item(0);
+        if ($n && $len($n) > 200) return clean_text($n->textContent);
+    }
+    $best = null; $top = 0;
+    foreach (array_slice(iterator_to_array($xp->query('//body | //div | //td | //section | //blockquote')), 0, 600) as $n) {
+        $t = $len($n); $l = $links($n);
+        $score = ($t - $l) * (1 - $l / max(1, $t)) ** 2;
+        if ($score > $top) { $top = $score; $best = $n; }
+    }
+    return $best ? clean_text($best->textContent) : '';
+}
+
+/** First sentences of the page text, but only if it reads like prose (not navigation); '' otherwise. */
+function prose_excerpt(string $body, int $max = 200): string {
+    $b = clean_text($body);
+    $head = mb_substr($b, 0, 400);
+    $words = preg_split('/\s+/u', $head, -1, PREG_SPLIT_NO_EMPTY);
+    if (count($words) < 12 || !preg_match('/[.!?](\s|$)/u', $head)) return '';
+    $short = count(array_filter($words, fn($w) => mb_strlen($w) <= 2)) / count($words);
+    $digits = preg_match_all('/\d/', $head) / max(1, mb_strlen($head));
+    $caps = count(array_filter($words, fn($w) => preg_match('/^\p{Lu}/u', $w))) / count($words);
+    return ($short > 0.4 || $digits > 0.08 || $caps > 0.6) ? '' : clean_cut($b, $max);
+}
+
+/** schema.org JSON-LD (Book/Product/Article/Video/Recipe...) first, then a small Amazon extractor. */
+function structured_data(DOMXPath $xp, string $host): array {
+    $o = ['title' => '', 'description' => '', 'image' => '', 'author' => ''];
+    $str = fn($v) => is_array($v) ? (isset($v['name']) ? (string)$v['name'] : (isset($v['url']) ? (string)$v['url'] : (is_string(reset($v)) ? reset($v) : (string)(reset($v)['name'] ?? reset($v)['url'] ?? '')))) : (string)$v;
+    foreach ($xp->query('//script[@type="application/ld+json"]') as $sc) {
+        $j = json_decode(trim($sc->textContent), true);
+        if (!is_array($j)) continue;
+        foreach (isset($j['@graph']) ? $j['@graph'] : (array_is_list($j) ? $j : [$j]) as $it) {
+            if (!is_array($it) || !array_intersect((array)($it['@type'] ?? []), ['Book', 'Product', 'Article', 'NewsArticle', 'BlogPosting', 'VideoObject', 'Recipe', 'Movie', 'Course', 'SoftwareApplication', 'MusicRecording'])) continue;
+            $o['title'] = $o['title'] ?: clean_text($str($it['name'] ?? $it['headline'] ?? ''));
+            $o['description'] = $o['description'] ?: clean_text(strip_tags($str($it['description'] ?? '')));
+            $o['image'] = $o['image'] ?: $str($it['image'] ?? '');
+            $o['author'] = $o['author'] ?: clean_text($str($it['author'] ?? ''));
+        }
+    }
+    if (preg_match('/(^|\.)amazon\./', $host)) {
+        $q = fn($x) => ($n = $xp->query($x)->item(0)) ? clean_text($n->textContent) : '';
+        $o['title'] = $q('//*[@id="productTitle"]') ?: $o['title'];
+        $o['author'] = implode(', ', array_slice(array_unique(array_filter(array_map(fn($a) => clean_text($a->textContent), iterator_to_array($xp->query('//*[@id="bylineInfo"]//a[contains(@class,"author") or contains(@href,"/e/")]'))))), 0, 3)) ?: $o['author'];
+        $d = $xp->query('//*[@id="bookDescription_feature_div"]//noscript | //*[@id="bookDescription_feature_div"]')->item(0);
+        $dt = '';
+        if ($d) { $dt = clean_text(strip_tags(html_entity_decode($d->textContent))); }
+        $o['description'] = preg_replace('/\s*Read more\s*$/i', '', $dt) ?: $o['description'];
+        $img = $xp->query('//*[@id="landingImage" or @id="imgBlkFront" or @id="ebooksImgBlkFront"]')->item(0);
+        if ($img) {
+            $dyn = json_decode($img->getAttribute('data-a-dynamic-image') ?: '{}', true);
+            $o['image'] = $img->getAttribute('data-old-hires') ?: ($dyn ? array_key_first($dyn) : '') ?: $img->getAttribute('src') ?: $o['image'];
+        }
+    }
+    return $o;
+}
+
+/** Brand words (host labels, site name) that must not become tags or stay in titles. */
+function brand_tokens(string $url, string $site = ''): array {
+    $labels = array_slice(explode('.', preg_replace('/^www\./', '', strtolower(parse_url($url, PHP_URL_HOST) ?: ''))), 0, -1);
+    $words = array_merge($labels, preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($site), -1, PREG_SPLIT_NO_EMPTY));
+    return array_values(array_unique(array_filter($words, fn($w) => mb_strlen($w) >= 4 && !in_array($w, ['news', 'blog', 'home', 'online', 'shop', 'store'], true))));
+}
+
+/** Strip site-name parts ("... : Amazon.it: Books", "The Avalon Project : X") from a page title. */
+function clean_title(string $title, string $url, string $site = ''): string {
+    $title = clean_text($title);
+    $brands = brand_tokens($url, $site);
+    if (!$brands) return $title;
+    $parts = preg_split('/\s+[|\-–—·•»]\s+|\s+:\s+/u', $title);
+    $keep = array_values(array_filter($parts, fn($p) => !array_filter($brands, fn($b) => str_contains(preg_replace('/[^\p{L}\p{N}]+/u', '', mb_strtolower($p)), $b))));
+    if (!$keep || count($keep) === count($parts)) return $title;
+    $out = implode(' – ', $keep);
+    if (count(preg_split('/\s+/u', $out)) < 3 && count(preg_split('/\s+/u', $title)) >= 3) {
+        $out = array_reduce($keep, fn($a, $p) => mb_strlen($p) > mb_strlen((string)$a) ? $p : $a, '');   // keep the longest remaining part
+        if (count(preg_split('/\s+/u', $out)) < 3) return $title;
+    }
+    return $out;
 }
