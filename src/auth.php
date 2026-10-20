@@ -5,6 +5,7 @@ require_once __DIR__ . '/mail.php';
 const SESSION_DAYS = 90;
 const LINK_MINUTES = 15;
 
+header('Cache-Control: no-store');   // pages show private data: never cached (also stops the back button from replaying them after logout)
 function client_ip(): string { return $_SERVER['REMOTE_ADDR'] ?? 'cli'; }
 function valid_email(string $e): bool { return strlen($e) <= 200 && filter_var($e, FILTER_VALIDATE_EMAIL) !== false; }
 
