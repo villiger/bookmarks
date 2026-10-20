@@ -24,17 +24,14 @@ function render_card(array $r): string {
     if ($r['status'] === 'pending') $badge = '<span class="badge pending">pending</span>';
     elseif ($r['status'] === 'error') $badge = '<span class="badge error" title="' . h($r['error']) . '">error</span>';
     $cat = $r['category'] ? '<span class="badge cat">' . h($r['category']) . '</span>' : '';
-    $tags = '';
-    foreach ($r['tags'] ?? [] as $t) {
-        $tags .= '<a class="tag" href="?tag=' . h(rawurlencode($t)) . '" hx-get="search.php?tag=' . h(rawurlencode($t)) . '" hx-target="#results" hx-swap="innerHTML" hx-push-url="?tag=' . h(rawurlencode($t)) . '" hx-include="[name=q]">' . h($t) . '</a>';
-    }
     $date = date('Y-m-d', (int)$r['created_at']);
-    return '<article class="card" id="b' . $id . '">'
+    $poll = $r['status'] === 'pending' ? ' hx-get="card.php?id=' . $id . '" hx-trigger="every 10s" hx-swap="outerHTML"' : '';
+    return '<article class="card" id="b' . $id . '"' . $poll . '>'
         . ($thumb ? '<div class="thumbwrap">' . $thumb . '</div>' : '')
         . '<div class="main"><h3>' . $fav . '<a href="' . h($r['url']) . '" target="_blank" rel="noopener noreferrer">' . $titleHtml . '</a></h3>'
         . '<div class="meta">' . h(domain_of($r['url'])) . ' · ' . $date . ' ' . $badge . $cat . '</div>'
         . ($desc ? '<p class="desc">' . $desc . '</p>' : '') . $snip
-        . '<div class="tags">' . $tags . '</div></div>'
+        . render_tags($r) . '</div>'
         . '<button class="del" title="Delete" hx-post="delete.php" hx-vals=\'{"id":' . $id . '}\' hx-confirm="Delete this bookmark?" hx-target="#b' . $id . '" hx-swap="outerHTML">×</button>'
         . '</article>';
 }
@@ -46,4 +43,23 @@ function render_results(int $uid, string $q, string $tag): string {
     if (!$rows) return $out . '<p class="empty">No bookmarks found.</p>';
     foreach ($rows as $r) $out .= render_card($r);
     return $out;
+}
+
+function render_tags(array $r): string {
+    $id = (int)$r['id'];
+    $tgt = ' hx-target="#tg' . $id . '" hx-swap="outerHTML"';
+    $vals = fn($act, $t) => ' hx-vals=\'' . h(json_encode(['id' => $id, 'action' => $act, 'tag' => $t])) . '\'';
+    $o = '<div class="tags" id="tg' . $id . '">';
+    foreach ($r['tags'] ?? [] as $t) {
+        $e = h(rawurlencode($t));
+        $o .= '<span class="tag"><a href="?tag=' . $e . '" hx-get="search.php?tag=' . $e . '" hx-target="#results" hx-swap="innerHTML" hx-push-url="?tag=' . $e . '" hx-include="[name=q]">' . h($t) . '</a>'
+            . '<button class="x" title="Remove tag" hx-post="tag.php"' . $vals('remove', $t) . $tgt . '>×</button></span>';
+    }
+    foreach ($r['suggested'] ?? [] as $t) {
+        $o .= '<span class="tag sugg"><button class="acc" title="Accept suggested tag" hx-post="tag.php"' . $vals('accept', $t) . $tgt . '>＋ ' . h($t) . '</button>'
+            . '<button class="x" title="Dismiss" hx-post="tag.php"' . $vals('remove', $t) . $tgt . '>×</button></span>';
+    }
+    $o .= '<form class="addtag" hx-post="tag.php"' . $tgt . '><input type="hidden" name="id" value="' . $id . '"><input type="hidden" name="action" value="add">'
+        . '<input name="tag" list="vocab" maxlength="24" placeholder="+ tag" autocomplete="off" required></form></div>';
+    return $o;
 }

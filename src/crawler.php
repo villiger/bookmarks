@@ -61,6 +61,13 @@ function youtube_id(string $url): ?string {
     return null;
 }
 
+function youtube_description(string $id): string {
+    $r = http_get('https://www.youtube.com/watch?v=' . $id . '&hl=en');
+    if ($r['error'] || !preg_match('/"shortDescription":("(?:[^"\\\\]|\\\\.)*")/', $r['body'], $m)) return '';
+    $d = json_decode($m[1]);
+    return is_string($d) ? mb_substr(clean_text($d), 0, 500) : '';
+}
+
 function clean_text(string $s): string {
     return trim(preg_replace('/\s+/u', ' ', $s));
 }
@@ -78,7 +85,7 @@ function to_utf8(string $html, string $type): string {
 
 /** Crawl one URL. Returns fields: title, description, keywords, image, favicon, body. Throws RuntimeException on failure. */
 function crawl(string $url): array {
-    $out = ['title' => '', 'description' => '', 'keywords' => '', 'image' => '', 'favicon' => '', 'body' => ''];
+    $out = ['title' => '', 'description' => '', 'keywords' => '', 'image' => '', 'favicon' => '', 'body' => '', 'channel' => '', 'final_url' => $url];
     $origin = (($p = parse_url($url)) && isset($p['host'])) ? $p['scheme'] . '://' . $p['host'] . (isset($p['port']) ? ':' . $p['port'] : '') : '';
     $yt = youtube_id($url);
     if ($yt) {
@@ -87,10 +94,14 @@ function crawl(string $url): array {
         if (is_array($j)) {
             $out['title'] = clean_text($j['title'] ?? '');
             $out['description'] = isset($j['author_name']) ? 'YouTube video by ' . $j['author_name'] : '';
-            $out['body'] = clean_text(($j['title'] ?? '') . ' ' . ($j['author_name'] ?? ''));
+            $out['channel'] = $j['author_name'] ?? '';
+            // Real video description (first ~500 chars) from the watch page's ytInitialPlayerResponse
+            $vd = youtube_description($yt);
+            $out['body'] = clean_text(($j['title'] ?? '') . ' ' . ($j['author_name'] ?? '') . ' ' . $vd);
             $out['image'] = "https://i.ytimg.com/vi/$yt/hqdefault.jpg";
             $out['favicon'] = 'https://www.youtube.com/favicon.ico';
             $out['keywords'] = 'youtube video';
+            $out['final_url'] = 'https://www.youtube.com/watch?v=' . $yt;
             return $out;
         }
         // oEmbed failed (private/removed video?) -> fall through to normal crawl, but keep thumbnail
@@ -102,6 +113,7 @@ function crawl(string $url): array {
         throw new RuntimeException('Not an HTML page: ' . $r['type']);
     }
     $final = $r['url'];
+    $out['final_url'] = $final;
     $html = to_utf8($r['body'], $r['type']);
     libxml_use_internal_errors(true);
     $doc = new DOMDocument();
@@ -132,6 +144,8 @@ function crawl(string $url): array {
     foreach (['script', 'style', 'nav', 'header', 'footer', 'aside', 'noscript', 'svg', 'form', 'iframe', 'template'] as $tag) {
         foreach (iterator_to_array($doc->getElementsByTagName($tag)) as $n) $n->parentNode?->removeChild($n);
     }
+    $noise = "//*[not(self::body or self::html or self::main or self::article)][@class or @id][contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'cookie') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'consent') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'banner') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'newsletter') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sidebar') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'breadcrumb') or contains(translate(concat(@class,' ',@id),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'popup') or @role='navigation' or @role='banner' or @role='dialog']";
+    foreach (iterator_to_array($xp->query($noise) ?: []) as $n) $n->parentNode?->removeChild($n);
     $root = null;
     foreach (['//main', '//article', '//body'] as $q) {
         $n = $xp->query($q);
@@ -141,4 +155,25 @@ function crawl(string $url): array {
     $text = $root ? clean_text($root->textContent) : '';
     $out['body'] = mb_substr($text, 0, 1500);
     return $out;
+}
+
+/** URLs to try for a bookmark whose scheme was guessed: https, http, then the www. variants. */
+function crawl_candidates(string $url, bool $guessed): array {
+    if (!$guessed) return [$url];
+    $p = parse_url($url);
+    $host = $p['host'] ?? '';
+    $rest = substr($url, strlen(($p['scheme'] ?? 'https') . '://' . $host));
+    $hosts = [$host];
+    if (!str_starts_with($host, 'www.')) $hosts[] = 'www.' . $host;
+    $c = [];
+    foreach ($hosts as $h) foreach (['https', 'http'] as $s) $c[] = "$s://$h$rest";
+    return $c;
+}
+
+function crawl_any(array $candidates): array {
+    $last = null;
+    foreach ($candidates as $u) {
+        try { return crawl($u); } catch (Throwable $e) { $last = $e; }
+    }
+    throw $last ?? new RuntimeException('no URL');
 }

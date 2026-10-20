@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/url.php';
 
 function db(): PDO {
     static $pdo = null;
@@ -14,6 +15,16 @@ function db(): PDO {
     $pdo->exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL;');
     $has = $pdo->query("SELECT 1 FROM sqlite_master WHERE name='bookmarks_fts'")->fetchColumn();
     if ($new || !$has) $pdo->exec(file_get_contents(__DIR__ . '/../schema.sql'));
+    // Migrations for databases created before these columns existed
+    $has = fn($t, $c) => (bool)array_filter($pdo->query("PRAGMA table_info($t)")->fetchAll(), fn($r) => $r['name'] === $c);
+    if (!$has('bookmarks', 'tags_edited')) $pdo->exec('ALTER TABLE bookmarks ADD COLUMN tags_edited INTEGER NOT NULL DEFAULT 0');
+    if (!$has('tags', 'suggested')) $pdo->exec('ALTER TABLE tags ADD COLUMN suggested INTEGER NOT NULL DEFAULT 0');
+    if (!$has('bookmarks', 'url_key')) $pdo->exec("ALTER TABLE bookmarks ADD COLUMN url_key TEXT NOT NULL DEFAULT ''");
+    if (!$has('bookmarks', 'scheme_guessed')) $pdo->exec('ALTER TABLE bookmarks ADD COLUMN scheme_guessed INTEGER NOT NULL DEFAULT 0');
+    foreach ($pdo->query("SELECT id, url FROM bookmarks WHERE url_key=''")->fetchAll() as $r) {
+        $pdo->prepare('UPDATE bookmarks SET url_key=? WHERE id=?')->execute([url_key($r['url']), $r['id']]);
+    }
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_bookmarks_urlkey ON bookmarks(user_id, url_key)');
     @chmod($path, 0660);
     return $pdo;
 }
@@ -26,7 +37,7 @@ function fts_reindex(int $id): void {
     $row = $b->fetch();
     $pdo->prepare('DELETE FROM bookmarks_fts WHERE rowid=?')->execute([$id]);
     if (!$row) return;
-    $t = $pdo->prepare('SELECT tag FROM tags WHERE bookmark_id=? ORDER BY tag');
+    $t = $pdo->prepare('SELECT tag FROM tags WHERE bookmark_id=? AND suggested=0 ORDER BY tag');
     $t->execute([$id]);
     $tags = $t->fetchAll(PDO::FETCH_COLUMN);
     if ($row['category']) $tags[] = $row['category'];
@@ -44,7 +55,7 @@ function delete_bookmark(int $id, int $uid): void {
 }
 
 function top_tags(int $uid, int $limit = 40): array {
-    $st = db()->prepare("SELECT t.tag, COUNT(*) c FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? GROUP BY t.tag ORDER BY c DESC, t.tag LIMIT " . (int)$limit);
+    $st = db()->prepare("SELECT t.tag, COUNT(*) c FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? AND t.suggested=0 GROUP BY t.tag ORDER BY c DESC, t.tag LIMIT " . (int)$limit);
     $st->execute([$uid]);
     return $st->fetchAll();
 }
@@ -80,9 +91,30 @@ function search_bookmarks(int $uid, string $q, string $tag, int $limit = 100): a
     $rows = $st->fetchAll();
     if ($rows) {
         $ids = implode(',', array_map(fn($r) => (int)$r['id'], $rows));
-        $tags = [];
-        foreach ($pdo->query("SELECT bookmark_id, tag FROM tags WHERE bookmark_id IN ($ids) ORDER BY tag") as $t) $tags[$t['bookmark_id']][] = $t['tag'];
-        foreach ($rows as &$r) $r['tags'] = $tags[$r['id']] ?? [];
+        $tags = []; $sugg = [];
+        foreach ($pdo->query("SELECT bookmark_id, tag, suggested FROM tags WHERE bookmark_id IN ($ids) ORDER BY tag") as $t) {
+            if ($t['suggested']) $sugg[$t['bookmark_id']][] = $t['tag']; else $tags[$t['bookmark_id']][] = $t['tag'];
+        }
+        foreach ($rows as &$r) { $r['tags'] = $tags[$r['id']] ?? []; $r['suggested'] = $sugg[$r['id']] ?? []; }
     }
     return $rows;
+}
+
+/** Vocabulary offered to the user for autocomplete: seed tags + their own tags. */
+function user_vocabulary(int $uid): array {
+    require_once __DIR__ . '/tagger.php';
+    return known_tags(db(), $uid, 200);
+}
+
+/** One bookmark of this user as a card row (no highlights), or null. */
+function fetch_card(int $id, int $uid): ?array {
+    $st = db()->prepare('SELECT b.*, NULL h_title, NULL h_body, NULL h_desc FROM bookmarks b WHERE b.id=? AND b.user_id=?');
+    $st->execute([$id, $uid]);
+    $r = $st->fetch();
+    if (!$r) return null;
+    $r['tags'] = []; $r['suggested'] = [];
+    $t = db()->prepare('SELECT tag, suggested FROM tags WHERE bookmark_id=? ORDER BY tag');
+    $t->execute([$id]);
+    foreach ($t as $x) { if ($x['suggested']) $r['suggested'][] = $x['tag']; else $r['tags'][] = $x['tag']; }
+    return $r;
 }

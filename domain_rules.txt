@@ -1,0 +1,26 @@
+# domain => tag, tag | category      (edit freely; subdomains match; tags and/or category may be empty)
+# categories: dev news video shopping reference article tool other
+github.com => opensource | dev
+gitlab.com => opensource | dev
+codeberg.org => opensource | dev
+youtube.com => video | video
+youtu.be => video | video
+music.youtube.com => music, video | video
+open.spotify.com => music | other
+soundcloud.com => music | other
+wikipedia.org => | reference
+stackoverflow.com => | dev
+stackexchange.com => | dev
+developer.mozilla.org => docs | dev
+php.net => php, docs | dev
+docs.python.org => docs | dev
+news.ycombinator.com => news | news
+tagesschau.de => news | news
+theguardian.com => news | news
+bbc.com => news | news
+bbc.co.uk => news | news
+nytimes.com => news | news
+amazon.com => shopping | shopping
+ikea.com => shopping | shopping
+digitec.ch => shopping | shopping
+galaxus.ch => shopping | shopping

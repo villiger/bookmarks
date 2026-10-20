@@ -1,0 +1,16 @@
+url                                                            | tags                                     | category  | llm  | sec
+https://github.com/ggml-org/llama.cpp                          | opensource,ai                            | dev       | yes  | 8.1
+https://www.youtube.com/watch?v=dQw4w9WgXcQ                    | video                                    | video     | yes  | 7.9
+https://www.youtube.com/watch?v=SxdOUGdseq4                    | video                                    | video     | yes  | 7.2
+https://en.wikipedia.org/wiki/SQLite                           | database                                 | reference | yes  | 8.2
+https://www.theguardian.com/technology                         | news                                     | news      | yes  | 7.2
+https://www.php.net/manual/en/book.pdo.php                     | php,docs,self-hosted                     | dev       | yes  | 7.1
+https://www.joelonsoftware.com/2000/08/09/the-joel-test-12-ste | ERROR HTTP 403
+https://www.ikea.com/ch/de/p/billy-buecherregal-weiss-00263850 | shopping                                 | shopping  | yes  | 9.1
+https://www.bbcgoodfood.com/recipes/classic-lasagne-0          | food                                     | article   | yes  | 8.1
+https://immich.app/                                            | video,self-hosted                        | article   | yes  | 6.0
+https://developer.mozilla.org/en-US/docs/Web/CSS/grid-template | docs,css                                 | dev       | yes  | 5.5
+https://news.ycombinator.com/item?id=1                         | news                                     | news      | yes  | 7.2
+https://www.tagesschau.de/                                     | news                                     | news      | yes  | 7.9
+https://stackoverflow.com/questions/11227809                   | ERROR HTTP 403
+https://open.spotify.com/show/4rOoJ6Egrf8K2IrywzwOMk           | music                                    | other     | yes  | 5.9

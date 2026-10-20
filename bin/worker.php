@@ -23,35 +23,42 @@ while (true) {
     $attempts = (int)$b['attempts'] + 1;
     $t0 = microtime(true);
     try {
-        $c = crawl($b['url']);
+        $c = crawl_any(crawl_candidates($b['url'], (bool)$b['scheme_guessed']));
+        // Final URL after redirects, cleaned; merge into an existing bookmark if it's a duplicate
+        $finalUrl = clean_url($c['final_url'] ?? $b['url']);
+        $finalKey = url_key($finalUrl);
+        $dup = $pdo->prepare('SELECT id FROM bookmarks WHERE user_id=? AND url_key=? AND id<>?');
+        $dup->execute([$b['user_id'], $finalKey, $id]);
+        if ($dup->fetchColumn()) { delete_bookmark($id, (int)$b['user_id']); echo date('c') . " merged #$id into existing {$finalUrl}\n"; continue; }
         $title = $c['title'] ?: $b['title'] ?: $b['url'];
         $desc = $c['description'];
         $note = null;
-        $existing = known_tags($pdo, (int)$b['user_id']);
-        $yt = youtube_id($b['url']) !== null;
+        $known = known_tags($pdo, (int)$b['user_id']);
+        $yt = youtube_id($finalUrl) !== null;
+        $viaLlm = false;
         try {
-            $r = match_known_tags($existing, $c['keywords'], $title, $desc, $yt);
-            $viaLlm = $r === null;
-            if ($viaLlm) $r = llm_tag($title, $desc, $c['body'], $existing);
+            $r = tag_bookmark($finalUrl, $c, $known, $pdo, (int)$b['user_id']);
+            $viaLlm = $r['llm'];
             if ($viaLlm && $desc === '' && trim($c['body']) !== '') {
                 try { $desc = llm_summary($title, $c['body']); } catch (Throwable $e) { $note = 'summary: ' . $e->getMessage(); }
             }
         } catch (Throwable $e) {
-            // LLM failed: keep the crawl result, fall back to meta keywords
+            // LLM failed: keep the crawl result, fall back to rules/meta keywords
+            $dr = apply_domain_rules($finalUrl);
             $kw = array_filter(array_map('trim', explode(',', $c['keywords'])));
-            $r = ['tags' => normalize_tags($kw), 'category' => youtube_id($b['url']) ? 'video' : 'other'];
+            $r = ['tags' => array_slice(array_values(array_unique(array_merge($dr['tags'], array_intersect(normalize_tags($kw), $known)))), 0, 4), 'suggested' => [], 'category' => $dr['category'] ?? ($yt ? 'video' : 'other')];
             $note = 'llm: ' . $e->getMessage();
         }
-        if (youtube_id($b['url'])) $r['category'] = 'video';
         $pdo->beginTransaction();
-        $pdo->prepare("UPDATE bookmarks SET title=?, description=?, favicon=?, image=?, body=?, category=?, status='done', error=? WHERE id=?")
-            ->execute([$title, $desc, $c['favicon'], $c['image'], $c['body'], $r['category'], $note ? mb_substr($note, 0, 500) : null, $id]);
+        $pdo->prepare("UPDATE bookmarks SET title=?, description=?, favicon=?, image=?, body=?, category=?, status='done', error=?, url=?, url_key=?, scheme_guessed=0 WHERE id=?")
+            ->execute([$title, $desc, $c['favicon'], $c['image'], $c['body'], $r['category'], $note ? mb_substr($note, 0, 500) : null, $finalUrl, $finalKey, $id]);
         $pdo->prepare('DELETE FROM tags WHERE bookmark_id=?')->execute([$id]);
-        $ins = $pdo->prepare('INSERT OR IGNORE INTO tags(bookmark_id, tag) VALUES(?,?)');
-        foreach ($r['tags'] as $t) $ins->execute([$id, $t]);
+        $ins = $pdo->prepare('INSERT OR IGNORE INTO tags(bookmark_id, tag, suggested) VALUES(?,?,?)');
+        foreach ($r['tags'] as $t) $ins->execute([$id, $t, 0]);
+        foreach ($r['suggested'] as $t) $ins->execute([$id, $t, 1]);
         $pdo->commit();
         fts_reindex($id);
-        echo date('c') . " done #$id {$b['url']} [" . implode(',', $r['tags']) . "] {$r['category']} " . (($viaLlm ?? true) ? '' : '(no-llm) ') . round(microtime(true) - $t0, 1) . "s" . ($note ? " ($note)" : '') . "\n";
+        echo date('c') . " done #$id {$b['url']} [" . implode(',', $r['tags']) . "] {$r['category']} " . ($viaLlm ? '' : '(no-llm) ') . round(microtime(true) - $t0, 1) . "s" . ($note ? " ($note)" : '') . "\n";
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         $status = $attempts >= $max ? 'error' : 'pending';

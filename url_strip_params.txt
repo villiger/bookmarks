@@ -1,0 +1,47 @@
+# Query parameters removed from saved URLs (case-insensitive). Edit freely.
+#   name            exact parameter name
+#   prefix*         any parameter starting with prefix
+#   name@host,host  only on these hosts (subdomains included)
+utm_*
+fbclid
+gclid
+gclsid
+dclid
+msclkid
+yclid
+twclid
+ttclid
+li_fat_id
+mc_cid
+mc_eid
+_hsenc
+_hsmi
+hsctatracking
+mkt_tok
+igshid
+si@youtube.com,youtu.be,spotify.com
+feature@youtube.com,youtu.be
+pp@youtube.com,youtu.be
+ref
+ref_src
+ref_url
+cmpid
+s_kwcid
+ga_*
+_ga
+_gl
+vero_*
+oly_*
+wt_mc
+spm
+scm
+share_source
+phpsessid
+jsessionid
+sid
+sessionid
+session_id
+cfid
+cftoken
+aff
+affiliate

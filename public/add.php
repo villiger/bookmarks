@@ -2,6 +2,22 @@
 require_once __DIR__ . '/../src/auth.php';
 header('Referrer-Policy: no-referrer');
 header('Cache-Control: no-store');
+require_once __DIR__ . '/../src/view.php';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {          // UI form (htmx), session + CSRF
+    $user = require_login(true);
+    check_csrf();
+    $added = []; $err = '';
+    foreach (preg_split('/[\s,]+/', trim((string)($_POST['urls'] ?? ''))) as $url) {
+        if ($url === '') continue;
+        $res = add_bookmark((int)$user['id'], $url);
+        if ($res['status'] === 'added') $added[] = $res['id']; else $err = $res['error'];
+    }
+    header('Cache-Control: no-store');
+    if ($added) header('HX-Trigger: bm-added');
+    foreach ($added as $id) echo render_card(fetch_card($id, (int)$user['id']));
+    echo '<div id="addmsg" class="err" hx-swap-oob="true">' . h($err) . '</div>';
+    exit;
+}
 $k = (string)($_GET['k'] ?? '');
 $u = trim((string)($_GET['u'] ?? ''));
 $t = trim((string)($_GET['t'] ?? ''));
@@ -15,17 +31,10 @@ if (!$user && preg_match('/^[0-9a-f]{64}$/', $k)) {
     if ($row && hash_equals($row['bookmarklet_key'], $k)) $user = $row;
 }
 if (!$user) { $msg = 'Forbidden'; $code = 403; }
-elseif (!preg_match('~^https?://[^\s]+$~i', $u) || strlen($u) > 2000) { $msg = 'Invalid URL'; $code = 400; }
 else {
-    $pdo = db();
-    $st = $pdo->prepare("INSERT OR IGNORE INTO bookmarks(user_id,url,title,status) VALUES(?,?,?,'pending')");
-    $st->execute([$user['id'], $u, mb_substr($t, 0, 300)]);
-    if ($st->rowCount()) {
-        fts_reindex((int)$pdo->lastInsertId());
-    } else {
-        $msg = 'Already saved ✓';
-        $pdo->prepare("UPDATE bookmarks SET status='pending', attempts=0, error=NULL WHERE user_id=? AND url=? AND status='error'")->execute([$user['id'], $u]);
-    }
+    $res = add_bookmark((int)$user['id'], $u, $t);
+    if ($res['status'] === 'invalid') { $msg = 'Invalid URL'; $code = 400; }
+    elseif ($res['status'] === 'dup') $msg = 'Already saved ✓';
 }
 http_response_code($code);
 ?><!doctype html>

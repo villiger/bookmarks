@@ -4,6 +4,7 @@ require_once __DIR__ . '/_head.php';
 $me = require_admin();
 header('Cache-Control: no-store');
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    check_csrf();
     $id = (int)($_POST['id'] ?? 0);
     $u = db()->prepare('SELECT * FROM users WHERE id=?'); $u->execute([$id]); $u = $u->fetch();
     $act = $_POST['action'] ?? '';
@@ -28,7 +29,7 @@ page_head('Admin'); ?>
 <?php foreach ($users as $u): ?>
 <article class="card"><div class="main"><h3><?= h($u['email']) ?> <span class="badge"><?= h($u['status']) ?></span><?= $u['is_admin'] ? ' <span class="badge cat">admin</span>' : '' ?></h3>
 <div class="meta">requested <?= date('Y-m-d H:i', (int)$u['created_at']) ?></div>
-<?php if ($u['id'] != $me['id']): ?><form method="post" class="inline"><input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
+<?php if ($u['id'] != $me['id']): ?><form method="post" class="inline"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
 <?php if ($u['status'] === 'pending'): ?><button name="action" value="approve">Approve</button> <button name="action" value="reject">Reject</button>
 <?php elseif ($u['status'] === 'active'): ?><button name="action" value="disable">Disable</button>
 <?php else: ?><button name="action" value="enable">Enable</button><?php endif; ?></form><?php endif; ?></div></article>

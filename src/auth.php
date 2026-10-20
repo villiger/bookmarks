@@ -92,3 +92,13 @@ function find_user_by_email(string $email): ?array {
     $st->execute([strtolower($email)]);
     return $st->fetch() ?: null;
 }
+
+function csrf_token(): string {
+    return hash_hmac('sha256', 'csrf', (string)($_COOKIE['bm_sess'] ?? ''));
+}
+
+/** For state-changing requests made with a session cookie. Header X-CSRF-Token (htmx) or field csrf. */
+function check_csrf(): void {
+    $t = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($_POST['csrf'] ?? '');
+    if (!is_string($t) || !hash_equals(csrf_token(), $t)) { http_response_code(403); exit('Bad CSRF token'); }
+}

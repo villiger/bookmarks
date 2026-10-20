@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   url TEXT NOT NULL,
+  url_key TEXT NOT NULL DEFAULT '',
+  scheme_guessed INTEGER NOT NULL DEFAULT 0,
   title TEXT,
   description TEXT,
   favicon TEXT,
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   status TEXT NOT NULL DEFAULT 'pending',   -- pending | done | error
   error TEXT,
   attempts INTEGER NOT NULL DEFAULT 0,
+  tags_edited INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
   UNIQUE(user_id, url)
 );
@@ -33,6 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_bookmarks_created ON bookmarks(user_id, created_a
 CREATE TABLE IF NOT EXISTS tags (
   bookmark_id INTEGER NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
   tag TEXT NOT NULL,
+  suggested INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (bookmark_id, tag)
 );
 CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
