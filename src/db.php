@@ -28,6 +28,7 @@ function db(): PDO {
         if (!$has('bookmarks', $col)) $pdo->exec("ALTER TABLE bookmarks ADD COLUMN $col INTEGER NOT NULL DEFAULT 0");
     }
     $pdo->exec('CREATE TABLE IF NOT EXISTS api_model_usage (month TEXT NOT NULL, model TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (month, model))');
+    $pdo->exec("CREATE TABLE IF NOT EXISTS trash (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, data TEXT NOT NULL, deleted_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))");
     $pdo->exec('CREATE TABLE IF NOT EXISTS api_usage (month TEXT PRIMARY KEY, calls INTEGER NOT NULL DEFAULT 0)');
     foreach ($pdo->query("SELECT id, url FROM bookmarks WHERE url_key=''")->fetchAll() as $r) {
         $pdo->prepare('UPDATE bookmarks SET url_key=? WHERE id=?')->execute([url_key($r['url']), $r['id']]);
@@ -51,6 +52,38 @@ function fts_reindex(int $id): void {
     if ($row['category']) $tags[] = $row['category'];
     $pdo->prepare('INSERT INTO bookmarks_fts(rowid,title,description,body,tags,url) VALUES(?,?,?,?,?,?)')
         ->execute([$id, $row['title'], trim($row['description'] . ' ' . $row['summary']), $row['body'], implode(' ', $tags), $row['url']]);
+}
+
+/** Delete a bookmark but keep a snapshot (row + tags) for a day so it can be restored. @return bool whether something was deleted */
+function trash_bookmark(int $id, int $uid): bool {
+    $pdo = db();
+    $pdo->exec('DELETE FROM trash WHERE deleted_at < ' . (time() - 86400));
+    $st = $pdo->prepare('SELECT * FROM bookmarks WHERE id=? AND user_id=?'); $st->execute([$id, $uid]);
+    if (!($row = $st->fetch(PDO::FETCH_ASSOC))) return false;
+    $t = $pdo->prepare('SELECT tag, suggested FROM tags WHERE bookmark_id=?'); $t->execute([$id]);
+    $pdo->prepare('INSERT OR REPLACE INTO trash(id, user_id, data) VALUES(?,?,?)')->execute([$id, $uid, json_encode(['row' => $row, 'tags' => $t->fetchAll(PDO::FETCH_ASSOC)], JSON_INVALID_UTF8_SUBSTITUTE)]);
+    delete_bookmark($id, $uid);
+    return true;
+}
+
+/** Put a trashed bookmark back (same id when free). @return int|null the bookmark id, null if it is gone or its URL was saved again meanwhile */
+function restore_bookmark(int $id, int $uid): ?int {
+    $pdo = db();
+    $st = $pdo->prepare('SELECT data FROM trash WHERE id=? AND user_id=?'); $st->execute([$id, $uid]);
+    if (!($d = json_decode((string)$st->fetchColumn(), true))) return null;
+    $row = $d['row'];
+    $taken = $pdo->prepare('SELECT 1 FROM bookmarks WHERE id=?'); $taken->execute([$id]);
+    if ($taken->fetchColumn()) unset($row['id']);
+    $cols = array_keys($row);
+    $ins = $pdo->prepare('INSERT OR IGNORE INTO bookmarks(' . implode(',', $cols) . ') VALUES(' . implode(',', array_fill(0, count($cols), '?')) . ')');
+    $ins->execute(array_values($row));
+    if (!$ins->rowCount()) return null;
+    $new = (int)$pdo->lastInsertId();
+    $ti = $pdo->prepare('INSERT OR IGNORE INTO tags(bookmark_id, tag, suggested) VALUES(?,?,?)');
+    foreach ($d['tags'] as $t) $ti->execute([$new, $t['tag'], $t['suggested']]);
+    $pdo->prepare('DELETE FROM trash WHERE id=?')->execute([$id]);
+    fts_reindex($new);
+    return $new;
 }
 
 function delete_bookmark(int $id, int $uid): void {

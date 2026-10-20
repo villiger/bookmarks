@@ -59,3 +59,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS bookmarks_fts USING fts5(
 -- OpenRouter calls per month (cap in config)
 CREATE TABLE IF NOT EXISTS api_usage (month TEXT PRIMARY KEY, calls INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS api_model_usage (month TEXT NOT NULL, model TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (month, model));
+
+-- Deleted bookmarks kept for a day so a delete can be undone (snapshot: row + tags as JSON).
+CREATE TABLE IF NOT EXISTS trash (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, data TEXT NOT NULL, deleted_at INTEGER NOT NULL DEFAULT (strftime('%s','now')));

@@ -56,6 +56,7 @@ Import a bookmarks file (Safari: File ▸ Export ▸ Bookmarks): <input type="fi
 <button type="button" class="reshuffle" title="Shuffle again" aria-label="Shuffle again" onclick="var f=this.parentNode;f.querySelector('[name=seed]').value=Math.floor(Math.random()*999999)+1;var s=f.querySelector('select');s.value='';htmx.trigger(s,'change')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg></button></div>
 <script>(function(){var q=document.querySelector('[name=q]'),o=document.querySelector('[name=sort] option');function l(){o.textContent=q.value.trim()?'Best match':'Shuffle'}q.addEventListener('input',l);l()})()</script>
 <?= render_tagcloud($uid, false) ?>
+<div id="toast"></div>
 <div id="results"><?= render_results($uid, $q, $tag) ?></div>
 
 <script>if(matchMedia("(hover:hover)").matches&&!location.search)document.querySelector(".addurl input").focus()</script>
