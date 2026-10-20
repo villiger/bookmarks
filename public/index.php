@@ -11,7 +11,7 @@ $st = db()->prepare("SELECT COUNT(*), COALESCE(SUM(status='pending'),0) FROM boo
 [$count, $pending] = $st->fetch(PDO::FETCH_NUM);
 $reqs = $user['is_admin'] ? (int)db()->query("SELECT COUNT(*) FROM users WHERE status='pending'")->fetchColumn() : 0;
 ?><!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#141416" media="(prefers-color-scheme: dark)">
 <meta name="robots" content="noindex"><title>Bookmarks</title><link rel="stylesheet" href="style.css">
 <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head><body hx-headers='<?= h(json_encode(["X-CSRF-Token" => csrf_token()])) ?>'>
@@ -22,10 +22,10 @@ $reqs = $user['is_admin'] ? (int)db()->query("SELECT COUNT(*) FROM users WHERE s
 <details class="bmbox"><summary>Bookmarklet</summary>
 <p>Drag this to your bookmarks bar: <a class="bml" href="<?= h($js) ?>" onclick="alert('Drag this link to your bookmarks bar.');return false">＋ Save to Bookmarks</a></p>
 <p><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('bmjs').value);this.textContent='Copied'">Copy</button>
-<input id="bmjs" type="text" readonly value="<?= h($js) ?>" style="width:60%">
+<input id="bmjs" type="text" readonly value="<?= h($js) ?>" class="wide">
 <form method="post" action="regenerate.php" class="inline" onsubmit="return confirm('The old bookmarklet will stop working. Continue?')"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><button>Regenerate key</button></form></p></details>
 <details class="bmbox"><summary>iOS / macOS share sheet</summary>
-<p>Key: <input type="text" readonly value="<?= h($user['bookmarklet_key']) ?>" id="bmkey" style="width:60%"> <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('bmkey').value);this.textContent='Copied'">Copy</button></p>
+<p>Key: <input type="text" readonly value="<?= h($user['bookmarklet_key']) ?>" id="bmkey" class="wide"> <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('bmkey').value);this.textContent='Copied'">Copy</button></p>
 <p>Endpoint: <code><?= h(base_url() . '/add.php') ?></code> (POST or GET, <code>format=json</code>)</p>
 <ol>
 <li>Shortcuts app: new Shortcut, name it <b>Save to Bookmarks</b>.</li>
