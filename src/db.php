@@ -12,7 +12,7 @@ function db(): PDO {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
-    $pdo->exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL;');
+    $pdo->exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=30000; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL;');
     $has = $pdo->query("SELECT 1 FROM sqlite_master WHERE name='bookmarks_fts'")->fetchColumn();
     if ($new || !$has) $pdo->exec(file_get_contents(__DIR__ . '/../schema.sql'));
     // Migrations for databases created before these columns existed
@@ -24,7 +24,7 @@ function db(): PDO {
     foreach (['title_orig', 'summary', 'client_title', 'client_desc', 'client_image', 'client_favicon', 'client_canonical', 'client_keywords', 'client_text', 'crawl_source'] as $col) {
         if (!$has('bookmarks', $col)) $pdo->exec("ALTER TABLE bookmarks ADD COLUMN $col TEXT");
     }
-    foreach (['llm_pending', 'llm_attempts', 'llm_next_at', 'refresh'] as $col) {
+    foreach (['llm_pending', 'llm_attempts', 'llm_next_at', 'refresh', 'text_edited'] as $col) {
         if (!$has('bookmarks', $col)) $pdo->exec("ALTER TABLE bookmarks ADD COLUMN $col INTEGER NOT NULL DEFAULT 0");
     }
     $pdo->exec('CREATE TABLE IF NOT EXISTS api_model_usage (month TEXT NOT NULL, model TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (month, model))');
@@ -111,7 +111,7 @@ function search_bookmarks(int $uid, string $q, string $tag, int $limit = 100): a
 /** Vocabulary offered to the user for autocomplete: seed tags + their own tags. */
 function user_vocabulary(int $uid): array {
     require_once __DIR__ . '/tagger.php';
-    return array_keys(vocab(db(), $uid, 200));
+    return array_keys(vocab(db(), $uid, 200, true));
 }
 
 /** One bookmark of this user as a card row (no highlights), or null. */

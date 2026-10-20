@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   tags_edited INTEGER NOT NULL DEFAULT 0,
   client_title TEXT, client_desc TEXT, client_image TEXT, client_favicon TEXT, client_canonical TEXT, client_keywords TEXT, client_text TEXT,  -- sent by the bookmarklet
   llm_pending INTEGER NOT NULL DEFAULT 0, llm_attempts INTEGER NOT NULL DEFAULT 0, llm_next_at INTEGER NOT NULL DEFAULT 0,   -- deferred OpenRouter step
+  text_edited INTEGER NOT NULL DEFAULT 0,          -- 1 = title/summary written by the user: rescans keep them
   refresh INTEGER NOT NULL DEFAULT 0,              -- 1 = full refresh of an edited bookmark: keep its applied tags, add new ones
   crawl_source TEXT,                             -- direct | jina | client
   created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),

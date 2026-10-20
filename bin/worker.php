@@ -32,7 +32,7 @@ while (true) {
         $title = clean_title($titleOrig, $finalUrl, (string)$c['site_name']);
         $r = tag_bookmark($finalUrl, $c, vocab($pdo, (int)$b['user_id']), $pdo, (int)$b['user_id']);
         $pdo->beginTransaction();
-        $pdo->prepare("UPDATE bookmarks SET title=?, title_orig=?, description=?, summary=?, favicon=?, image=?, body=?, category=?, status='done', error=NULL, crawl_source=?, url=?, url_key=?, scheme_guessed=0 WHERE id=?")
+        $pdo->prepare("UPDATE bookmarks SET title=CASE WHEN text_edited=1 THEN title ELSE ? END, title_orig=?, description=?, summary=CASE WHEN text_edited=1 THEN summary ELSE ? END, favicon=?, image=?, body=?, category=?, status='done', error=NULL, crawl_source=?, url=?, url_key=?, scheme_guessed=0 WHERE id=?")
             ->execute([$title, $titleOrig, $c['description'], $r['summary'], $c['favicon'], $c['image'], $c['body'], $r['category'], $src, $finalUrl, $finalKey, $id]);
         // Tags: replaced on every re-process, except bookmarks the user corrected: those are untouched, or (refresh=1) keep their applied tags and get the new ones on top.
         if (!$b['tags_edited'] || $b['refresh']) {
@@ -50,7 +50,7 @@ while (true) {
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         $status = $attempts >= $max ? 'error' : 'pending';
-        $pdo->prepare('UPDATE bookmarks SET status=?, error=? WHERE id=?')->execute([$status, mb_substr($e->getMessage(), 0, 500), $id]);
+        try { $pdo->prepare('UPDATE bookmarks SET status=?, error=? WHERE id=?')->execute([$status, mb_substr($e->getMessage(), 0, 500), $id]); } catch (Throwable $e2) { error_log('worker: ' . $e2->getMessage()); }
         echo date('c') . " fail #$id {$b['url']} attempt $attempts/$max: {$e->getMessage()}\n";
     }
 }

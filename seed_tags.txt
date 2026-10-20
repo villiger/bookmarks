@@ -17,6 +17,7 @@ news: news, current events, journalism, breaking, headlines, newspaper, report
 politics: politics, government, elections, parliament, war, geopolitics, policy, president
 science: science, research, physics, chemistry, biology, space, astronomy, study, experiment
 shopping: shopping, buy, price, product, store, cart, order, discount, sale
+boat: boat, boats, sailing, sailboat, yacht, dinghy, marine, boat building
 travel: travel, trip, hotel, flight, vacation, destination, tourism, city guide
 food: food, recipe, cooking, ingredients, kitchen, baking, restaurant, meal
 health: health, medicine, fitness, nutrition, sleep, mental health, doctor, exercise

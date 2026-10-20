@@ -22,15 +22,15 @@ function normalize_tags(array $tags): array {
     return array_keys($out);
 }
 
-/** Vocabulary tag => description: seed_tags.txt ("tag: description") plus the user's most-used tags. */
-function vocab(PDO $pdo, int $uid, int $limit = 60): array {
+/** Vocabulary tag => description: seed_tags.txt ("tag: description") plus the user's most-used tags. Model-applied tags only feed back when the user confirmed them ($all = false), else early guesses snowball. */
+function vocab(PDO $pdo, int $uid, int $limit = 60, bool $all = false): array {
     $v = [];
     foreach (@file(cfg('seed_tags_file') ?: __DIR__ . '/../seed_tags.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $l) {
         if ($l[0] === '#') continue;
         [$t, $d] = array_pad(explode(':', $l, 2), 2, '');
         if ($t = mb_strtolower(trim($t))) $v[$t] = trim($d) ?: $t;
     }
-    $q = $pdo->prepare("SELECT t.tag FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? AND t.suggested=0 GROUP BY t.tag ORDER BY COUNT(*) DESC LIMIT $limit");
+    $q = $pdo->prepare("SELECT t.tag FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? AND t.suggested=0 AND (b.tags_edited=1 OR " . (int)$all . ") GROUP BY t.tag ORDER BY COUNT(*) DESC LIMIT $limit");
     $q->execute([$uid]);
     foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $v[$t] ??= $t;
     return $v;
@@ -184,7 +184,7 @@ function suggest_external(PDO $pdo, string $url, array $c, array $names, array $
         . "\n\nVocabulary: " . implode(', ', array_diff($names, BM_FORMAT_TAGS))
         . ($shots ? "\nHow this user tags other pages:\n" . implode("\n", $shots) : '');
     $ask = fn(string $extra) => $base . "\n\nReply with JSON only: {\"tags\": [up to 4 tags chosen ONLY from the vocabulary, most relevant first; fewer (even 1) is fine when nothing else clearly fits; only tags central to this page; avoid vague catch-alls like tools, tech, business, productivity, news, art, science, docs, devops, opensource or fun unless the page is really about them; never tag something unrelated such as cars for a boat], "
-        . "\"new_tags\": [0 to 2 specific new lowercase tags of 1-2 words, only ones that clearly and centrally describe this page; an empty list is the normal answer when the vocabulary tags already cover it], \"category\": \"one of " . implode('|', BM_CATEGORIES) . "\", "
+        . "\"new_tags\": [0 to 2 new lowercase tags, preferably ONE general word (boat, not boat design), only ones that clearly and centrally describe this page; an empty list is the normal answer when the vocabulary tags already cover it], \"category\": \"one of " . implode('|', BM_CATEGORIES) . "\", "
         . "\"summary\": \"Write 2-3 sentences (max 400 characters) on what this is about and what it offers or argues. Start with the substance, not with the medium: never say 'A YouTube video', 'A Wikipedia article', 'A web page', 'A website' or 'This article', since the site already shows that. "
         . "Lead with the topic or the main claim, not with who made it. Mention the author or channel only when they are the point (a famous author, an essay, a book) and then at most once, never as the sentence subject by default. Never write 'the video', 'the article' or 'the page' anywhere in the summary. "
         . "Name the form only when it adds information (an essay, a paper, a tutorial, a review, a novel). Examples: 'How a 10-foot stitch-and-glue dinghy rows, tows and sails, and how it was designed.', 'Federalist No. 10 (Madison) argues that a large republic best contains the danger of factions.', 'Speed-modelling a Scandinavian medieval house in Blender for game use.', 'The 1788 London panic over an unidentified attacker of women.' "
@@ -236,6 +236,7 @@ function merge_picks(array $x, array $vocab, array $applied, array $sugg, string
 function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 0): array {
     $yt = youtube_id($url) !== null;
     $title = $c['title'] ?: $url;
+    if (preg_match('/^(404\b|page not found|not found|error 404|seite nicht gefunden|pagina non trovata)/i', trim($title))) return ['tags' => [], 'suggested' => [], 'category' => 'other', 'summary' => '', 'api' => 0, 'cost' => 0.0, 'llm_pending' => false];   // dead page: nothing to tag
     $names = array_keys($vocab);
     $dr = domain_rule($url);
     $local = array_merge($dr['tags'], word_hits($names, "$title {$c['description']} {$c['keywords']}"));      // 1. rules and keyword hits
@@ -292,7 +293,7 @@ function llm_retry(PDO $pdo, array $b, array $vocab): string {
     }
     $pdo->prepare('UPDATE bookmarks SET llm_pending=0, llm_attempts=?, refresh=0 WHERE id=?')->execute([$attempts, $b['id']]);
     if (!$x) return 'gaveup';                                                         // permanent failure or cap reached
-    if (!empty($x['summary'])) $pdo->prepare('UPDATE bookmarks SET summary=? WHERE id=?')->execute([$x['summary'], $b['id']]);
+    if (!empty($x['summary'])) $pdo->prepare('UPDATE bookmarks SET summary=? WHERE id=? AND text_edited=0')->execute([$x['summary'], $b['id']]);
     if (!$b['tags_edited'] || $b['refresh']) {      // edited bookmarks only during a refresh: their applied tags stay, new ones are added
         $cur = fn($sg) => array_column($pdo->query('SELECT tag FROM tags WHERE bookmark_id=' . (int)$b['id'] . ' AND suggested=' . $sg)->fetchAll(), 'tag');
         [$applied, $sugg] = merge_picks($x, $vocab, array_values(array_diff($cur(0), BM_FORMAT_TAGS)), $cur(1), '', $b['url'], [], $c['title'] . ' ' . $c['description'] . ' ' . ($x['summary'] ?? ''), $c['body']);

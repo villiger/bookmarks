@@ -35,7 +35,9 @@ function render_card(array $r): string {
         . '<div class="meta">' . h(domain_of($r['url'])) . ' · ' . $date . ' ' . $badge . $cat . '</div>'
         . ($desc ? '<p class="desc">' . $desc . '</p>' : '') . $snip
         . render_tags($r) . '</div>'
-        . '<button class="del" title="Delete" hx-post="delete.php" hx-vals=\'{"id":' . $id . '}\' hx-confirm="Delete this bookmark?" hx-target="#b' . $id . '" hx-swap="outerHTML">×</button>'
+        . '<div class="acts"><button title="Edit" hx-get="edit.php?id=' . $id . '" hx-target="#b' . $id . '" hx-swap="outerHTML">✎</button>'
+        . '<button title="Rescan page (keeps your tags, replaces title and summary)" hx-post="rescan.php" hx-vals=\'{"id":' . $id . '}\' hx-target="#b' . $id . '" hx-swap="outerHTML">↻</button>'
+        . '<button class="del" title="Delete" hx-post="delete.php" hx-vals=\'{"id":' . $id . '}\' hx-confirm="Delete this bookmark?" hx-target="#b' . $id . '" hx-swap="outerHTML">×</button></div>'
         . '</article>';
 }
 
@@ -65,4 +67,16 @@ function render_tags(array $r): string {
     $o .= '<form class="addtag" hx-post="tag.php"' . $tgt . '><input type="hidden" name="id" value="' . $id . '"><input type="hidden" name="action" value="add">'
         . '<input name="tag" list="vocab" maxlength="24" placeholder="+ tag" autocomplete="off" required></form></div>';
     return $o;
+}
+
+/** Edit form that replaces a card: title and the text shown on the card. */
+function render_edit(array $r): string {
+    $id = (int)$r['id'];
+    $shown = ($r['summary'] ?? '') !== '' ? $r['summary'] : clean_cut((string)$r['description']);
+    return '<article class="card editing" id="b' . $id . '"><form class="editform" hx-post="edit.php" hx-target="#b' . $id . '" hx-swap="outerHTML">'
+        . '<input type="hidden" name="id" value="' . $id . '">'
+        . '<label>Title<input name="title" maxlength="300" value="' . h($r['title']) . '"></label>'
+        . '<label>Description<textarea name="summary" rows="4" maxlength="600">' . h($shown) . '</textarea></label>'
+        . '<div class="meta">' . h($r['url']) . '</div>'
+        . '<button type="submit">Save</button> <button type="button" hx-get="card.php?id=' . $id . '" hx-target="#b' . $id . '" hx-swap="outerHTML">Cancel</button></form></article>';
 }
