@@ -31,6 +31,7 @@ while (true) {
         $titleOrig = $c['title'] ?: $b['title'] ?: $b['url'];
         $title = clean_title($titleOrig, $finalUrl, (string)$c['site_name']);
         $r = tag_bookmark($finalUrl, $c, vocab($pdo, (int)$b['user_id']), $pdo, (int)$b['user_id']);
+        if (!empty($r['title'])) $title = $r['title'];   // the model replaced a bad crawled title (the original stays in title_orig)
         $pdo->beginTransaction();
         $pdo->prepare("UPDATE bookmarks SET title=CASE WHEN text_edited=1 THEN title ELSE ? END, title_orig=?, description=?, summary=CASE WHEN text_edited=1 THEN summary ELSE ? END, favicon=?, image=?, body=?, category=?, status='done', error=NULL, crawl_source=?, url=?, url_key=?, scheme_guessed=0 WHERE id=?")
             ->execute([$title, $titleOrig, $c['description'], $r['summary'], $c['favicon'], $c['image'], $c['body'], $r['category'], $src, $finalUrl, $finalKey, $id]);

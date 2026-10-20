@@ -110,6 +110,22 @@ function valid_summary(string $s, array $format = []): string {
     return (mb_strlen($s) < 20 || preg_match('/^(this|the) (web)?(page|video|article|post|site|website|book|podcast|channel)\b|^diese seite\b|\b(available|kaufen|disponibile|formats?|price|shipping|in stock|add to cart)\b/i', $s)) ? '' : $s;
 }
 
+/** Readable title from the URL's last meaningful path segment ("radar-dome-belt.html" -> "Radar dome belt"); the host when there is none. */
+function title_from_url(string $url): string {
+    $segs = array_reverse(array_filter(explode('/', urldecode((string)parse_url($url, PHP_URL_PATH)))));
+    foreach ($segs as $seg) {   // skip index pages and bare IDs
+        $t = trim(preg_replace('/[\s_+\-]+/', ' ', preg_replace('/\.(html?|php|aspx?)$/i', '', $seg)));
+        if (preg_match('/\p{L}{3}/u', $t) && mb_strlen($t) <= 90 && !preg_match('/^(index|default|home|main)$/i', $t) && !(preg_match('/\d/', $t) && !str_contains($t, ' '))) return mb_strtoupper(mb_substr($t, 0, 1)) . mb_substr($t, 1);
+    }
+    return host_of($url);
+}
+
+/** A model-written replacement title: 3-90 chars, no markup; '' = keep the crawled one. */
+function valid_title(string $t): string {
+    $t = clean_text(strip_tags($t));
+    return (mb_strlen($t) < 3 || mb_strlen($t) > 90) ? '' : $t;
+}
+
 /** New-tag candidates: not vocabulary tags (or stems of them), no site/brand/channel names. */
 function novel_tags(array $cands, array $names, string $channel, string $url, array $brands = []): array {
     $brands = array_merge($brands, brand_tokens($url));
@@ -185,6 +201,7 @@ function suggest_external(PDO $pdo, string $url, array $c, array $names, array $
         . ($shots ? "\nHow this user tags other pages:\n" . implode("\n", $shots) : '');
     $ask = fn(string $extra) => $base . "\n\nReply with JSON only: {\"tags\": [up to 4 tags chosen ONLY from the vocabulary, most relevant first; fewer (even 1) is fine when nothing else clearly fits; only tags central to this page; avoid vague catch-alls like tools, tech, business, productivity, news, art, science, docs, devops, opensource or fun unless the page is really about them; never tag something unrelated such as cars for a boat], "
         . "\"new_tags\": [0 to 2 new lowercase tags, preferably ONE general word (boat, not boat design), only ones that clearly and centrally describe this page; an empty list is the normal answer when the vocabulary tags already cover it], \"category\": \"one of " . implode('|', BM_CATEGORIES) . "\", "
+        . "\"title\": \"empty string unless the page title is bad (generic like Home or Untitled, only the site name, a bot-check or error page, or clearly unrelated to the content); then a short descriptive title of at most 70 characters in the page's language, never just the site name\", "
         . "\"summary\": \"Write 2-3 sentences (max 400 characters) on what this is about and what it offers or argues. Start with the substance, not with the medium: never say 'A YouTube video', 'A Wikipedia article', 'A web page', 'A website' or 'This article', since the site already shows that. "
         . "Lead with the topic or the main claim, not with who made it. Mention the author or channel only when they are the point (a famous author, an essay, a book) and then at most once, never as the sentence subject by default. Never write 'the video', 'the article' or 'the page' anywhere in the summary. "
         . "Name the form only when it adds information (an essay, a paper, a tutorial, a review, a novel). Examples: 'How a 10-foot stitch-and-glue dinghy rows, tows and sails, and how it was designed.', 'Federalist No. 10 (Madison) argues that a large republic best contains the danger of factions.', 'Speed-modelling a Scandinavian medieval house in Blender for game use.', 'The 1788 London panic over an unidentified attacker of women.' "
@@ -196,7 +213,7 @@ function suggest_external(PDO $pdo, string $url, array $c, array $names, array $
         $p = openrouter_post($pdo, $ask($extra), 450);
         if (!isset($p['j'])) return $i ? $out : $p;
         $j = $p['j'];
-        $out = ['tags' => normalize_tags((array)($j['tags'] ?? [])), 'new_tags' => normalize_tags((array)($j['new_tags'] ?? [])), 'category' => in_array($j['category'] ?? '', BM_CATEGORIES, true) ? $j['category'] : '',
+        $out = ['tags' => normalize_tags((array)($j['tags'] ?? [])), 'new_tags' => normalize_tags((array)($j['new_tags'] ?? [])), 'category' => in_array($j['category'] ?? '', BM_CATEGORIES, true) ? $j['category'] : '', 'title' => valid_title((string)($j['title'] ?? '')),
                 'summary' => valid_summary((string)($j['summary'] ?? ''), $format), 'cost' => $p['cost'] + ($out['cost'] ?? 0)];
         if ($out['summary'] !== '') break;
         $raw = $raw ?: clean_text(strip_tags((string)($j['summary'] ?? '')));
@@ -236,7 +253,7 @@ function merge_picks(array $x, array $vocab, array $applied, array $sugg, string
 function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 0): array {
     $yt = youtube_id($url) !== null;
     $title = $c['title'] ?: $url;
-    if (preg_match('/^(404\b|just a moment|attention required|access denied|are you a (human|robot)|page not found|not found|error 404|seite nicht gefunden|pagina non trovata)/i', trim($title))) return ['tags' => [], 'suggested' => [], 'category' => 'other', 'summary' => '', 'api' => 0, 'cost' => 0.0, 'llm_pending' => false];   // dead page: nothing to tag
+    if (preg_match('/^(404\b|just a moment|attention required|access denied|are you a (human|robot)|page not found|not found|error 404|seite nicht gefunden|pagina non trovata)/i', trim($title))) return ['tags' => [], 'suggested' => [], 'category' => 'other', 'summary' => '', 'title' => title_from_url($url), 'api' => 0, 'cost' => 0.0, 'llm_pending' => false];   // dead page: nothing to tag, the URL slug is the best title left
     $names = array_keys($vocab);
     $dr = domain_rule($url);
     $local = array_merge($dr['tags'], word_hits($names, "$title {$c['description']} {$c['keywords']}"));      // 1. rules and keyword hits
@@ -258,7 +275,7 @@ function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 
     $category = $dr['category'] ?? ($x['category'] ?? '') ?: category_for($applied, $yt);
     if (!$format) $format = type_tag($category);
     return ['tags' => prune_types(array_merge($format, $applied)), 'suggested' => $sugg, 'category' => $category,
-            'summary' => $x['summary'] ?? '', 'api' => $x ? 1 : 0, 'cost' => $x['cost'] ?? 0.0, 'llm_pending' => $deferred];
+            'summary' => $x['summary'] ?? '', 'title' => $x['title'] ?? '', 'api' => $x ? 1 : 0, 'cost' => $x['cost'] ?? 0.0, 'llm_pending' => $deferred];
 }
 
 /** Link-type tag from the model's category when no structural format tag matched. */
@@ -294,6 +311,7 @@ function llm_retry(PDO $pdo, array $b, array $vocab): string {
     $pdo->prepare('UPDATE bookmarks SET llm_pending=0, llm_attempts=?, refresh=0 WHERE id=?')->execute([$attempts, $b['id']]);
     if (!$x) return 'gaveup';                                                         // permanent failure or cap reached
     if (!empty($x['summary'])) $pdo->prepare('UPDATE bookmarks SET summary=? WHERE id=? AND text_edited=0')->execute([$x['summary'], $b['id']]);
+    if (!empty($x['title'])) $pdo->prepare('UPDATE bookmarks SET title=? WHERE id=? AND text_edited=0')->execute([$x['title'], $b['id']]);
     if (!$b['tags_edited'] || $b['refresh']) {      // edited bookmarks only during a refresh: their applied tags stay, new ones are added
         $cur = fn($sg) => array_column($pdo->query('SELECT tag FROM tags WHERE bookmark_id=' . (int)$b['id'] . ' AND suggested=' . $sg)->fetchAll(), 'tag');
         [$applied, $sugg] = merge_picks($x, $vocab, array_values(array_diff($cur(0), BM_FORMAT_TAGS)), $cur(1), '', $b['url'], [], $c['title'] . ' ' . $c['description'] . ' ' . ($x['summary'] ?? ''), $c['body']);
