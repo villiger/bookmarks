@@ -42,8 +42,8 @@ function render_card(array $r): string {
         . '</article>';
 }
 
-function render_results(int $uid, string $q, string $tag): string {
-    $rows = search_bookmarks($uid, $q, $tag);
+function render_results(int $uid, string $q, string $tag, string $sort = '', int $seed = 0): string {
+    $rows = search_bookmarks($uid, $q, $tag, 100, $sort, $seed);
     $out = '';
     if ($tag !== '') $out .= '<p class="filter">Tag: <strong>' . h($tag) . '</strong> <a href="." hx-get="search.php" hx-target="#results" hx-push-url="." hx-include="[name=q]">clear</a></p>';
     if (!$rows) return $out . '<p class="empty">No bookmarks found.</p>';

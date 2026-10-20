@@ -236,7 +236,7 @@ function merge_picks(array $x, array $vocab, array $applied, array $sugg, string
 function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 0): array {
     $yt = youtube_id($url) !== null;
     $title = $c['title'] ?: $url;
-    if (preg_match('/^(404\b|page not found|not found|error 404|seite nicht gefunden|pagina non trovata)/i', trim($title))) return ['tags' => [], 'suggested' => [], 'category' => 'other', 'summary' => '', 'api' => 0, 'cost' => 0.0, 'llm_pending' => false];   // dead page: nothing to tag
+    if (preg_match('/^(404\b|just a moment|attention required|access denied|are you a (human|robot)|page not found|not found|error 404|seite nicht gefunden|pagina non trovata)/i', trim($title))) return ['tags' => [], 'suggested' => [], 'category' => 'other', 'summary' => '', 'api' => 0, 'cost' => 0.0, 'llm_pending' => false];   // dead page: nothing to tag
     $names = array_keys($vocab);
     $dr = domain_rule($url);
     $local = array_merge($dr['tags'], word_hits($names, "$title {$c['description']} {$c['keywords']}"));      // 1. rules and keyword hits

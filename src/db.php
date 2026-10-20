@@ -75,7 +75,20 @@ function fts_query(string $q): string {
     return implode(' ', array_map(fn($t) => '"' . $t . '"*', $terms));
 }
 
-function search_bookmarks(int $uid, string $q, string $tag, int $limit = 100): array {
+/** ORDER BY for a sort mode ('' = shuffle, or best match when searching). The shuffle is a seeded hash, so it stays stable while the page is open. */
+function sort_sql(string $sort, int $seed, bool $searching): string {
+    if ($sort === '' && $searching) $sort = 'match';
+    return match ($sort) {
+        'new' => 'b.created_at DESC, b.id DESC',
+        'old' => 'b.created_at ASC, b.id ASC',
+        'az' => 'b.title COLLATE NOCASE ASC',
+        'review' => "(b.status='error') DESC, (b.status='pending') DESC, (SELECT COUNT(*) FROM tags WHERE bookmark_id=b.id AND suggested=0) ASC, (COALESCE(b.summary,'')='') DESC, b.id DESC",
+        'match' => 'bm25(bookmarks_fts, 10.0, 4.0, 1.0, 6.0, 0.5)',
+        default => '((b.id + ' . $seed . ') * 2654435761) % 4294967291',
+    };
+}
+
+function search_bookmarks(int $uid, string $q, string $tag, int $limit = 100, string $sort = '', int $seed = 0): array {
     $pdo = db();
     $params = [':uid' => $uid];
     $tagSql = '';
@@ -89,10 +102,10 @@ function search_bookmarks(int $uid, string $q, string $tag, int $limit = 100): a
                   highlight(bookmarks_fts,1,char(2),char(3)) AS h_desc
                 FROM bookmarks_fts JOIN bookmarks b ON b.id = bookmarks_fts.rowid
                 WHERE bookmarks_fts MATCH :q AND b.user_id = :uid $tagSql
-                ORDER BY bm25(bookmarks_fts, 10.0, 4.0, 1.0, 6.0, 0.5) LIMIT $limit";
+                ORDER BY " . sort_sql($sort, $seed, true) . " LIMIT $limit";
     } else {
         $sql = "SELECT b.*, NULL h_title, NULL h_body, NULL h_desc FROM bookmarks b WHERE b.user_id = :uid $tagSql
-                ORDER BY b.created_at DESC, b.id DESC LIMIT $limit";
+                ORDER BY " . sort_sql($sort === 'match' ? '' : $sort, $seed, false) . " LIMIT $limit";
     }
     $st = $pdo->prepare($sql);
     $st->execute($params);

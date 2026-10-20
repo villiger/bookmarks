@@ -49,10 +49,15 @@ Import a bookmarks file (Safari: File ▸ Export ▸ Bookmarks): <input type="fi
 <?php if (!empty($_GET['imp'])): ?><p class="count"><?= h($_GET['imp']) ?></p><?php endif; ?>
 <datalist id="vocab"><?php foreach (user_vocabulary($uid) as $v): ?><option value="<?= h($v) ?>"><?php endforeach; ?></datalist>
 <div class="searchbox"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" name="q" value="<?= h($q) ?>" placeholder="Search title, description, text, tags…" autocomplete="off"
-  hx-get="search.php" hx-trigger="keyup changed delay:300ms, search" hx-target="#results" hx-vals='js:{tag: new URLSearchParams(location.search).get("tag") || ""}'></div>
+  hx-get="search.php" hx-trigger="keyup changed delay:300ms, search" hx-target="#results" hx-include="[name=sort],[name=seed]" hx-vals='js:{tag: new URLSearchParams(location.search).get("tag") || ""}'></div>
+<div class="sortbar"><label>Sort <select name="sort" aria-label="Sort order" hx-get="search.php" hx-trigger="change" hx-target="#results" hx-include="[name=q],[name=seed]" hx-vals='js:{tag: new URLSearchParams(location.search).get("tag") || ""}'>
+<option value="">Shuffle</option><option value="new">Newest first</option><option value="old">Oldest first</option><option value="az">A–Z</option><option value="review">Needs review</option></select></label>
+<input type="hidden" name="seed" value="<?= random_int(1, 999999) ?>">
+<button type="button" class="reshuffle" title="Shuffle again" aria-label="Shuffle again" onclick="var f=this.parentNode;f.querySelector('[name=seed]').value=Math.floor(Math.random()*999999)+1;var s=f.querySelector('select');s.value='';htmx.trigger(s,'change')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg></button></div>
+<script>(function(){var q=document.querySelector('[name=q]'),o=document.querySelector('[name=sort] option');function l(){o.textContent=q.value.trim()?'Best match':'Shuffle'}q.addEventListener('input',l);l()})()</script>
 <div class="tagcloud">
 <?php foreach (top_tags($uid) as $t): $e = rawurlencode($t['tag']); ?>
-<a class="tag" href="?tag=<?= h($e) ?>" hx-get="search.php?tag=<?= h($e) ?>" hx-target="#results" hx-push-url="?tag=<?= h($e) ?>" hx-include="[name=q]"><?= h($t['tag']) ?> <small><?= (int)$t['c'] ?></small></a>
+<a class="tag" href="?tag=<?= h($e) ?>" hx-get="search.php?tag=<?= h($e) ?>" hx-target="#results" hx-push-url="?tag=<?= h($e) ?>" hx-include="[name=q],[name=sort],[name=seed]"><?= h($t['tag']) ?> <small><?= (int)$t['c'] ?></small></a>
 <?php endforeach; ?></div>
 <div id="results"><?= render_results($uid, $q, $tag) ?></div>
 
