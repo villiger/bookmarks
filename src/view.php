@@ -69,14 +69,15 @@ function render_tags(array $r): string {
     return $o;
 }
 
-/** Edit form that replaces a card: title and the text shown on the card. */
-function render_edit(array $r): string {
+/** Edit form that replaces a card: title, the text shown on the card and the URL (a new URL is re-crawled). */
+function render_edit(array $r, string $err = ''): string {
     $id = (int)$r['id'];
     $shown = ($r['summary'] ?? '') !== '' ? $r['summary'] : clean_cut((string)$r['description']);
     return '<article class="card editing" id="b' . $id . '"><form class="editform" hx-post="edit.php" hx-target="#b' . $id . '" hx-swap="outerHTML">'
         . '<input type="hidden" name="id" value="' . $id . '">'
         . '<label>Title<input name="title" maxlength="300" value="' . h($r['title']) . '"></label>'
         . '<label>Description<textarea name="summary" rows="4" maxlength="600">' . h($shown) . '</textarea></label>'
-        . '<div class="meta">' . h($r['url']) . '</div>'
+        . '<label>URL<input name="url" type="text" maxlength="2000" value="' . h($r['url']) . '" autocapitalize="off" spellcheck="false"></label>'
+        . ($err !== '' ? '<div class="err">' . h($err) . '</div>' : '')
         . '<div class="btns"><button type="submit">Save</button><button type="button" hx-get="card.php?id=' . $id . '" hx-target="#b' . $id . '" hx-swap="outerHTML">Cancel</button></div></form></article>';
 }
