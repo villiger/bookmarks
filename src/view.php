@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/crawler.php';
 
 /** Escape, then turn the char(2)/char(3) highlight markers into <mark>. */
 function hl(?string $s): string {
@@ -16,7 +17,8 @@ function render_card(array $r): string {
     $title = $r['h_title'] ?? null;
     $titleHtml = $title ? hl($title) : h($r['title'] ?: $r['url']);
     if (trim(strip_tags($titleHtml)) === '') $titleHtml = h($r['url']);
-    $desc = !empty($r['h_desc']) ? hl($r['h_desc']) : h($r['description']);
+    $shown = ($r['summary'] ?? '') !== '' ? $r['summary'] : clean_cut((string)($r['description'] ?: mb_substr((string)$r['body'], 0, 400)));
+    $desc = (!empty($r['h_desc']) && ($r['summary'] ?? '') === '') ? hl($r['h_desc']) : h($shown);
     $snip = (!empty($r['h_body']) && strpos($r['h_body'], "\x02") !== false) ? '<p class="snip">' . hl($r['h_body']) . '</p>' : '';
     $fav = $r['favicon'] ? '<img class="fav" src="' . h($r['favicon']) . '" alt="" loading="lazy" referrerpolicy="no-referrer" width="16" height="16">' : '<span class="fav"></span>';
     $thumb = $r['image'] ? '<img class="thumb" src="' . h($r['image']) . '" alt="" loading="lazy" referrerpolicy="no-referrer">' : '';

@@ -178,6 +178,22 @@ function category_for(array $tags, bool $yt): string {
     return 'other';
 }
 
+/** A usable summary: 20-300 chars, not an echo of boilerplate; '' otherwise. */
+function valid_summary(string $s): string {
+    $s = clean_text(strip_tags($s));
+    return (mb_strlen($s) < 20 || mb_strlen($s) > 300 || preg_match('/^(this (web)?page|diese seite)\b/i', $s)) ? '' : (mb_strlen($s) > 240 ? clean_cut($s, 240) : $s);
+}
+
+/** Description is missing, too long/short, junk (consent text, equals the title) or identical on another bookmark of the same site. */
+function desc_needs_summary(PDO $pdo, int $uid, string $url, string $title, string $desc): bool {
+    $d = clean_text($desc); $n = mb_strlen($d);
+    if ($n < 40 || $n > 300 || mb_strtolower($d) === mb_strtolower(clean_text($title))) return true;
+    if (preg_match('/^YouTube video by |cookie|consent|accept all|enable javascript|privacy policy|sign in|log in|subscribe to/i', $d)) return true;
+    $q = $pdo->prepare('SELECT 1 FROM bookmarks WHERE user_id=? AND description=? AND url<>? AND url LIKE ? LIMIT 1');
+    $q->execute([$uid, $desc, $url, '%//%' . host_of($url) . '/%']);
+    return (bool)$q->fetchColumn();
+}
+
 /**
  * Optional OpenRouter step (cheap Gemini Flash-Lite): vocabulary picks, new tags, a one-sentence summary.
  * Capped per month in api_usage; returns [] on any problem so the local result is used.
@@ -194,8 +210,7 @@ function suggest_external(PDO $pdo, string $url, array $c, array $names): array 
     $prompt = 'Domain: ' . host_of($url) . "\nTitle: " . mb_substr($c['title'] ?: $url, 0, 200) . "\nDescription: " . mb_substr($c['description'], 0, 400)
         . ($yt ? "\nChannel: {$c['channel']}\nYouTube category: {$c['yt_category']}\nYouTube keywords: " . mb_substr($c['keywords'], 0, 300) : '')
         . "\nText: " . mb_substr($c['body'], 0, 1000) . "\nVocabulary: " . implode(', ', array_diff($names, BM_FORMAT_TAGS))
-        . "\nReply with JSON only: {\"tags\": [2 to 5 tags chosen ONLY from the vocabulary; include only tags that clearly apply], \"new_tags\": [0 to 3 specific new lowercase tags of 1-2 words that are not in the vocabulary], \"summary\": \""
-        . ($c['description'] === '' ? 'one sentence about the page' : '') . "\"}";
+        . "\nReply with JSON only: {\"tags\": [2 to 5 tags chosen ONLY from the vocabulary; include only tags that clearly apply], \"new_tags\": [0 to 3 specific new lowercase tags of 1-2 words that are not in the vocabulary], \"summary\": \"one or two neutral sentences, max 200 characters, in the language of the page, no marketing fluff, not starting with 'This page'\"}";
     $ch = curl_init(cfg('openrouter_url') ?: 'https://openrouter.ai/api/v1/chat/completions');
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_POST => true,
         CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $key, 'Content-Type: application/json', 'HTTP-Referer: ' . (cfg('base_url') ?: 'https://localhost'), 'X-Title: Bookmarks'],
@@ -209,7 +224,7 @@ function suggest_external(PDO $pdo, string $url, array $c, array $names): array 
     $j = json_decode((string)($r['choices'][0]['message']['content'] ?? ''), true);
     if (!is_array($j)) { error_log('openrouter: failed ' . substr(json_encode($r['error'] ?? curl_error($ch)), 0, 160)); return []; }
     $u = $r['usage'] ?? [];
-    return ['tags' => normalize_tags((array)($j['tags'] ?? [])), 'new_tags' => normalize_tags((array)($j['new_tags'] ?? [])), 'summary' => mb_substr(trim((string)($j['summary'] ?? '')), 0, 300),
+    return ['tags' => normalize_tags((array)($j['tags'] ?? [])), 'new_tags' => normalize_tags((array)($j['new_tags'] ?? [])), 'summary' => valid_summary((string)($j['summary'] ?? '')),
             'cost' => ($u['prompt_tokens'] ?? 0) * (float)(cfg('openrouter_price_in') ?: 1e-7) + ($u['completion_tokens'] ?? 0) * (float)(cfg('openrouter_price_out') ?: 4e-7)];
 }
 
@@ -258,7 +273,7 @@ function llm_retry(PDO $pdo, array $b, array $vocab): string {
     }
     $pdo->prepare('UPDATE bookmarks SET llm_pending=0, llm_attempts=? WHERE id=?')->execute([$attempts, $b['id']]);
     if (!$x) return 'gaveup';                                                         // permanent failure or cap reached
-    if (!$b['description'] && !empty($x['summary'])) $pdo->prepare('UPDATE bookmarks SET description=? WHERE id=?')->execute([$x['summary'], $b['id']]);
+    if (!empty($x['summary'])) { $pdo->prepare('UPDATE bookmarks SET summary=? WHERE id=?')->execute([$x['summary'], $b['id']]); fts_reindex((int)$b['id']); }
     if (!$b['tags_edited']) {
         $cur = fn($sg) => array_column($pdo->query('SELECT tag FROM tags WHERE bookmark_id=' . (int)$b['id'] . ' AND suggested=' . $sg)->fetchAll(), 'tag');
         $applied = array_values(array_diff($cur(0), BM_FORMAT_TAGS)); $sugg = $cur(1);
@@ -305,7 +320,7 @@ function tag_bookmark(string $url, array $c, array $vocab, PDO $pdo, int $uid = 
     $sugg = array_slice(array_keys(array_filter($score, fn($s) => $s < 0.5)), 0, 3);            // weaker vocabulary candidates
     // 6. OpenRouter only when local evidence is short or the page could not be read properly
     $x = []; $deferred = false;
-    if (count($applied) < BM_MIN || ($c['source'] ?? 'direct') !== 'direct' || crawl_thin($c)) {
+    if (count($applied) < BM_MIN || ($c['source'] ?? 'direct') !== 'direct' || crawl_thin($c) || desc_needs_summary($pdo, $uid, $url, $title, $c['description'])) {
         try { $x = suggest_external($pdo, $url, $c, $names); } catch (Throwable $e) { error_log('openrouter: ' . $e->getMessage()); }
         if (!empty($x['transient'])) { $deferred = true; $x = []; }                 // keep local tags, retry later
         elseif ($x) [$applied, $sugg] = merge_external($x, $names, $z, $applied, $sugg, (string)($c['channel'] ?? ''), $url);

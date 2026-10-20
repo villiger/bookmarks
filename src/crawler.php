@@ -244,3 +244,13 @@ function crawl_resilient(array $b): array {
     }
     return [$best, $src];
 }
+
+/** Plain text, whitespace collapsed, cut at a sentence end within ~220 chars, else at a word boundary with an ellipsis. */
+function clean_cut(string $s, int $max = 220): string {
+    $s = clean_text(html_entity_decode(strip_tags($s), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    if (mb_strlen($s) <= $max) return $s;
+    $head = mb_substr($s, 0, $max);
+    if (preg_match('/^(.{40,}[.!?])(?=\s|$)/us', $head, $m)) return $m[1];       // last sentence end inside the limit
+    $cut = mb_strrpos($head, ' ');
+    return rtrim(mb_substr($head, 0, $cut > 40 ? $cut : $max), " ,;:-–—") . '…';
+}

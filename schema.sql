@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   scheme_guessed INTEGER NOT NULL DEFAULT 0,
   title TEXT,
   description TEXT,
+  summary TEXT,                                  -- short neutral summary shown on the card (LLM), else description is cut cleanly
   favicon TEXT,
   image TEXT,
   body TEXT,

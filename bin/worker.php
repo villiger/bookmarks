@@ -35,17 +35,16 @@ while (true) {
         $desc = $c['description'];
         $vocab = vocab($pdo, (int)$b['user_id']);
         $r = tag_bookmark($finalUrl, $c, $vocab, $pdo, (int)$b['user_id']);
-        if ($desc === '') $desc = $r['summary'] ?: mb_substr($c['body'], 0, 200);
         $pdo->beginTransaction();
-        $pdo->prepare("UPDATE bookmarks SET title=?, description=?, favicon=?, image=?, body=?, category=?, status='done', error=NULL, crawl_source=?, embedding=?, url=?, url_key=?, scheme_guessed=0 WHERE id=?")
-            ->execute([$title, $desc, $c['favicon'], $c['image'], $c['body'], $r['category'], $src, $r['embedding'], $finalUrl, $finalKey, $id]);
+        $pdo->prepare("UPDATE bookmarks SET title=?, description=?, summary=?, favicon=?, image=?, body=?, category=?, status='done', error=NULL, crawl_source=?, embedding=?, url=?, url_key=?, scheme_guessed=0 WHERE id=?")
+            ->execute([$title, $desc, $r['summary'], $c['favicon'], $c['image'], $c['body'], $r['category'], $src, $r['embedding'], $finalUrl, $finalKey, $id]);
         if (!$b['tags_edited']) {      // never overwrite tags the user corrected
             $pdo->prepare('DELETE FROM tags WHERE bookmark_id=?')->execute([$id]);
             $ins = $pdo->prepare('INSERT OR IGNORE INTO tags(bookmark_id, tag, suggested) VALUES(?,?,?)');
             foreach ($r['tags'] as $t) $ins->execute([$id, $t, 0]);
             foreach ($r['suggested'] as $t) $ins->execute([$id, $t, 1]);
         }
-        if ($r['llm_pending'] && !$b['tags_edited']) $pdo->prepare('UPDATE bookmarks SET llm_pending=1, llm_attempts=1, llm_next_at=? WHERE id=?')->execute([time() + llm_backoff(1), $id]);
+        if ($r['llm_pending']) $pdo->prepare('UPDATE bookmarks SET llm_pending=1, llm_attempts=1, llm_next_at=? WHERE id=?')->execute([time() + llm_backoff(1), $id]);
         else $pdo->prepare('UPDATE bookmarks SET llm_pending=0 WHERE id=?')->execute([$id]);
         $pdo->commit();
         fts_reindex($id);
@@ -59,7 +58,7 @@ while (true) {
 }
 
 // Deferred OpenRouter step: up to 5 due bookmarks per run (local tags are already in place)
-$due = $pdo->prepare("SELECT * FROM bookmarks WHERE llm_pending=1 AND tags_edited=0 AND llm_next_at<=? AND status='done' ORDER BY llm_next_at LIMIT 5");
+$due = $pdo->prepare("SELECT * FROM bookmarks WHERE llm_pending=1 AND llm_next_at<=? AND status='done' ORDER BY llm_next_at LIMIT 5");
 $due->execute([time()]);
 foreach ($due->fetchAll() as $b) {
     try { $res = llm_retry($pdo, $b, vocab($pdo, (int)$b['user_id'])); } catch (Throwable $e) { $res = 'error: ' . $e->getMessage(); }
