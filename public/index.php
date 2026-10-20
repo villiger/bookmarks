@@ -15,16 +15,17 @@ $reqs = $user['is_admin'] ? (int)db()->query("SELECT COUNT(*) FROM users WHERE s
 <meta name="robots" content="noindex"><title>Bookmarks</title><link rel="stylesheet" href="style.css">
 <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head><body hx-headers='<?= h(json_encode(["X-CSRF-Token" => csrf_token()])) ?>'>
-<header><h1>Bookmarks</h1>
-<span class="count"><?= (int)$count ?> saved<?= $pending ? ", " . (int)$pending . " pending" : "" ?></span>
-<?php if ($user['is_admin']): ?><a href="admin.php">Users<?= $reqs ? " ($reqs requests)" : '' ?></a><?php endif; ?>
-<form method="post" action="logout.php" class="inline"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><button class="linkbtn" title="<?= h($user['email']) ?>">Log out</button></form></header>
-<details class="bmbox"><summary>Bookmarklet</summary>
+<header class="top"><a class="brand" href="./"><span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg></span>Bookmarks</a>
+<span class="count"><?= (int)$count ?> saved<?= $pending ? " · " . (int)$pending . " processing" : "" ?></span>
+<details class="menu"><summary aria-label="Menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg><?php if ($reqs): ?><i class="dot"></i><?php endif; ?></summary>
+<div class="panel">
+<section><h4>Save from anywhere</h4>
+<details><summary>Browser bookmarklet</summary>
 <p>Drag this to your bookmarks bar: <a class="bml" href="<?= h($js) ?>" onclick="alert('Drag this link to your bookmarks bar.');return false">＋ Save to Bookmarks</a></p>
 <p><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('bmjs').value);this.textContent='Copied'">Copy</button>
 <input id="bmjs" type="text" readonly value="<?= h($js) ?>" class="wide">
 <form method="post" action="regenerate.php" class="inline" onsubmit="return confirm('The old bookmarklet will stop working. Continue?')"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><button>Regenerate key</button></form></p></details>
-<details class="bmbox"><summary>iOS / macOS share sheet</summary>
+<details><summary>iPhone / Mac share sheet</summary>
 <p>Key: <input type="text" readonly value="<?= h($user['bookmarklet_key']) ?>" id="bmkey" class="wide"> <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('bmkey').value);this.textContent='Copied'">Copy</button></p>
 <p>Endpoint: <code><?= h(base_url() . '/add.php') ?></code> (POST or GET, <code>format=json</code>)</p>
 <ol>
@@ -33,22 +34,27 @@ $reqs = $user['is_admin'] ? (int)db()->query("SELECT COUNT(*) FROM users WHERE s
 <li>Add <b>Get Contents of URL</b>: URL <code><?= h(base_url() . '/add.php') ?></code>, Method <b>POST</b>, Request Body <b>JSON</b> with <code>k</code> = your key (Text) and <code>u</code> = <b>Shortcut Input</b>. That is enough; <code>format</code> is optional (Form also works).</li>
 <li>Add <b>Get Dictionary Value</b> for <code>status</code>, then <b>Show Notification</b>: "Saved ✓ (status)".</li>
 </ol>
-<p>The Shortcut syncs to your Mac via iCloud and appears in Safari's Share menu there too. To share it, create an iCloud link with the key removed and add an Import Question for <code>k</code>.</p></details>
-<details class="bmbox"><summary>Import / export</summary>
+<p>The Shortcut syncs to your Mac via iCloud and appears in Safari's Share menu there too. To share it, create an iCloud link with the key removed and add an Import Question for <code>k</code>.</p></details></section>
+<section><h4>Your data</h4>
+<details><summary>Import / export</summary>
 <p><a href="export.php" download>Export all bookmarks</a> (HTML, importable into Safari, Chrome and Firefox).</p>
 <form method="post" action="import.php" enctype="multipart/form-data" class="inline"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-Import a bookmarks file (Safari: File ▸ Export ▸ Bookmarks): <input type="file" name="file" accept=".html,.htm" required> <button>Import</button></form></details>
+Import a bookmarks file (Safari: File ▸ Export ▸ Bookmarks): <input type="file" name="file" accept=".html,.htm" required> <button>Import</button></form></details></section>
+<section class="rows"><?php if ($user['is_admin']): ?><a href="admin.php">Users<?= $reqs ? " <span class=\"badge pending\">$reqs</span>" : '' ?></a><?php endif; ?>
+<form method="post" action="logout.php"><input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>"><button class="rowbtn" title="<?= h($user['email']) ?>">Log out <small><?= h($user['email']) ?></small></button></form></section>
+</div></details></header>
 <form class="addurl" hx-post="add.php" hx-target="#results" hx-swap="afterbegin" hx-on:bm-added="this.reset()">
-<input type="text" name="urls" placeholder="example.com or https://…" required autocomplete="off" autocapitalize="off" spellcheck="false"><button type="submit">Save</button></form>
+<input type="text" name="urls" placeholder="Paste a link to save…" aria-label="URL to save" required autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go"><button type="submit" class="primary">Save</button></form>
 <div id="addmsg" class="err"></div>
 <?php if (!empty($_GET['imp'])): ?><p class="count"><?= h($_GET['imp']) ?></p><?php endif; ?>
 <datalist id="vocab"><?php foreach (user_vocabulary($uid) as $v): ?><option value="<?= h($v) ?>"><?php endforeach; ?></datalist>
-<input type="search" name="q" value="<?= h($q) ?>" placeholder="Search title, description, text, tags…" autofocus autocomplete="off"
-  hx-get="search.php" hx-trigger="keyup changed delay:300ms, search" hx-target="#results" hx-vals='js:{tag: new URLSearchParams(location.search).get("tag") || ""}'>
+<div class="searchbox"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" name="q" value="<?= h($q) ?>" placeholder="Search title, description, text, tags…" autocomplete="off"
+  hx-get="search.php" hx-trigger="keyup changed delay:300ms, search" hx-target="#results" hx-vals='js:{tag: new URLSearchParams(location.search).get("tag") || ""}'></div>
 <div class="tagcloud">
 <?php foreach (top_tags($uid) as $t): $e = rawurlencode($t['tag']); ?>
 <a class="tag" href="?tag=<?= h($e) ?>" hx-get="search.php?tag=<?= h($e) ?>" hx-target="#results" hx-push-url="?tag=<?= h($e) ?>" hx-include="[name=q]"><?= h($t['tag']) ?> <small><?= (int)$t['c'] ?></small></a>
 <?php endforeach; ?></div>
 <div id="results"><?= render_results($uid, $q, $tag) ?></div>
-<p class="foot">New bookmarks are processed by the background worker (about a minute).</p>
+
+<script>if(matchMedia("(hover:hover)").matches&&!location.search)document.querySelector(".addurl input").focus()</script>
 </body></html>

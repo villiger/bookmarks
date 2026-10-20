@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/crawler.php';
+require_once __DIR__ . '/tagger.php';
 
 /** Escape, then turn the char(2)/char(3) highlight markers into <mark>. */
 function hl(?string $s): string {
@@ -32,12 +33,12 @@ function render_card(array $r): string {
     return '<article class="card" id="b' . $id . '"' . $poll . '>'
         . ($thumb ? '<div class="thumbwrap">' . $thumb . '</div>' : '')
         . '<div class="main"><h3>' . $fav . '<a href="' . h($r['url']) . '" target="_blank" rel="noopener noreferrer">' . $titleHtml . '</a></h3>'
-        . '<div class="meta">' . h(domain_of($r['url'])) . ' · ' . $date . ' ' . $badge . $cat . '</div>'
+        . '<div class="meta">' . h(domain_of($r['url'])) . ' · ' . $date . ' ' . $badge . '</div>'
         . ($desc ? '<p class="desc">' . $desc . '</p>' : '') . $snip
         . render_tags($r) . '</div>'
-        . '<div class="acts"><button title="Edit" hx-get="edit.php?id=' . $id . '" hx-target="#b' . $id . '" hx-swap="outerHTML">✎</button>'
-        . '<button title="Rescan page (keeps your tags, replaces title and summary)" hx-post="rescan.php" hx-vals=\'{"id":' . $id . '}\' hx-target="#b' . $id . '" hx-swap="outerHTML">↻</button>'
-        . '<button class="del" title="Delete" hx-post="delete.php" hx-vals=\'{"id":' . $id . '}\' hx-confirm="Delete this bookmark?" hx-target="#b' . $id . '" hx-swap="outerHTML">×</button></div>'
+        . '<div class="acts"><button title="Edit" hx-get="edit.php?id=' . $id . '" hx-target="#b' . $id . '" hx-swap="outerHTML" aria-label="Edit"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>'
+        . '<button title="Rescan page (keeps your tags, replaces title and summary)" hx-post="rescan.php" hx-vals=\'{"id":' . $id . '}\' hx-target="#b' . $id . '" hx-swap="outerHTML" aria-label="Rescan"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></button>'
+        . '<button class="del" title="Delete" hx-post="delete.php" hx-vals=\'{"id":' . $id . '}\' hx-confirm="Delete this bookmark?" hx-target="#b' . $id . '" hx-swap="outerHTML" aria-label="Delete"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg></button></div>'
         . '</article>';
 }
 
@@ -57,7 +58,7 @@ function render_tags(array $r): string {
     $o = '<div class="tags" id="tg' . $id . '">';
     foreach ($r['tags'] ?? [] as $t) {
         $e = h(rawurlencode($t));
-        $o .= '<span class="tag"><a href="?tag=' . $e . '" hx-get="search.php?tag=' . $e . '" hx-target="#results" hx-swap="innerHTML" hx-push-url="?tag=' . $e . '" hx-include="[name=q]">' . h($t) . '</a>'
+        $o .= '<span class="tag' . (in_array($t, BM_FORMAT_TAGS, true) ? ' fmt' : '') . '"><a href="?tag=' . $e . '" hx-get="search.php?tag=' . $e . '" hx-target="#results" hx-swap="innerHTML" hx-push-url="?tag=' . $e . '" hx-include="[name=q]">' . h($t) . '</a>'
             . '<button class="x" title="Remove tag" hx-post="tag.php"' . $vals('remove', $t) . $tgt . '>×</button></span>';
     }
     foreach ($r['suggested'] ?? [] as $t) {
