@@ -10,9 +10,9 @@ Three generations, same URLs, run on villiger (1 vCPU):
 ## Summary
 | | Qwen v0 | Qwen final | Hybrid |
 |--|--|--|--|
-| 13 crawlable URLs: applied >= 3 | 77% (5 tags each, mostly junk) | 15% | 8% |
+| 13 crawlable URLs: applied >= 3 | 92% (4 to 5 tags each, mostly junk) | 15% | 8% |
 | applied + suggested >= 3 | n/a | 85% | **100%** |
-| avg applied / applied+sugg | 4.4 / n/a | 1.5 / 3.1 | 1.5 / 3.8 |
+| avg applied / applied+sugg | 4.2 / n/a | 1.5 / 3.1 | 1.5 / 3.8 |
 | 6 YouTube URLs: applied >= 3 | 0% | 17% | 17% |
 | applied + sugg >= 3 | n/a | 50% | **100%** |
 | user's 9 crawlable bookmarks: applied >= 3 / a+s >= 3 | n/a | n/a | 44% / 100% |
@@ -21,7 +21,7 @@ Three generations, same URLs, run on villiger (1 vCPU):
 | model on disk | 491 MB | 491 MB | 132 MB |
 | `src/tagger.php` | 325 lines (final Qwen state) | | 223 lines |
 
-Applied >= 3 is low for the hybrid by design: only evidence-backed tags are applied; the rest is offered as suggestions to fill the 3 minimum. (Qwen v0's 77% came from padding with irrelevant tags.)
+Applied >= 3 is low for the hybrid by design: only evidence-backed tags are applied; the rest is offered as suggestions to fill the 3 minimum. (Qwen v0's 92% came from padding with irrelevant tags.)
 
 ## Per URL: Qwen final vs Hybrid (13 crawlable of 15; joelonsoftware and stackoverflow return 403)
 | URL | Qwen final | Hybrid | Verdict |
