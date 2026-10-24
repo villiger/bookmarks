@@ -1,0 +1,1 @@
+<div id="toast" hx-swap-oob="true"><?php if ($id !== null): ?><div class="toast">Bookmark deleted <button hx-post="restore.php" hx-vals='{"id":<?= $id ?>}' hx-target="#results" hx-swap="afterbegin">Undo</button></div><?php endif ?></div>

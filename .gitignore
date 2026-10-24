@@ -1,3 +1,4 @@
 /config.php
 data/*
 !data/.gitkeep
+.DS_Store

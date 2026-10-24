@@ -1,14 +1,14 @@
 <?php
 // Import/export of bookmarks as Netscape bookmark HTML (Safari, Chrome, Firefox, Edge and most tools read and write it).
 require_once __DIR__ . '/url.php';
-require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/bookmarks.php';
 require_once __DIR__ . '/tagger.php';
 
 /** Netscape bookmark file for a user: one folder, TAGS attribute (applied tags), the summary as <DD>. */
 function export_netscape(int $uid): string {
     $st = db()->prepare("SELECT b.url, COALESCE(NULLIF(b.title,''), b.url) title, b.summary, b.created_at,
         (SELECT group_concat(tag, ',') FROM tags WHERE bookmark_id=b.id AND suggested=0) tags
-        FROM bookmarks b WHERE b.user_id=? ORDER BY b.created_at DESC, b.id DESC");
+        FROM bookmarks b WHERE b.user_id=? AND b.deleted_at IS NULL ORDER BY b.created_at DESC, b.id DESC");
     $st->execute([$uid]);
     $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     $out = "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">\n<TITLE>Bookmarks</TITLE>\n<H1>Bookmarks</H1>\n<DL><p>\n    <DT><H3>Bookmarks</H3>\n    <DL><p>\n";

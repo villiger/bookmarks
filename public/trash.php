@@ -1,19 +1,16 @@
 <?php
-require_once __DIR__ . '/../src/auth.php';
-require_once __DIR__ . '/../src/view.php';
-require_once __DIR__ . '/_head.php';
+require __DIR__ . '/../src/app.php';
 $u = require_login($_SERVER['REQUEST_METHOD'] === 'POST');
 $uid = (int)$u['id'];
-header('Cache-Control: no-store');
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {          // htmx: replaces the row
     check_csrf();
     $id = (int)($_POST['id'] ?? 0);
     $t = array_values(array_filter(trash_list($uid), fn($x) => $x['id'] === $id))[0] ?? null;
     if (!$t) { echo '<div></div>'; exit; }
     if (($_POST['action'] ?? '') === 'restore') {
-        echo render_trash_row($t, restore_bookmark($id, $uid) ? 'Restored.' : 'Could not restore (that URL was saved again).');
+        echo render_trash_row($t, restore_bookmark($id, $uid) ? 'Restored.' : 'Could not restore (it was removed meanwhile).');
     } else {
-        db()->prepare('DELETE FROM trash WHERE id=? AND user_id=?')->execute([$id, $uid]);
+        purge_bookmark($id, $uid);
         echo render_trash_row($t, 'Deleted forever.');
     }
     exit;

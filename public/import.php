@@ -1,6 +1,5 @@
 <?php
-require_once __DIR__ . '/../src/auth.php';
-require_once __DIR__ . '/../src/transfer.php';
+require __DIR__ . '/../src/app.php';
 $u = require_login();
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') { header('Location: ./'); exit; }
 check_csrf();

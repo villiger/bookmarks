@@ -3,9 +3,10 @@
 // Benchmark: crawl + tag a list of URLs WITHOUT touching any user's data (in-memory DB; the OpenRouter call is real).
 // Usage: php bin/bench-tags.php bench/urls.txt
 if (PHP_SAPI !== 'cli') exit(1);
+require_once __DIR__ . '/../src/db.php';
 require_once __DIR__ . '/../src/tagger.php';
 $pdo = new PDO('sqlite::memory:');
-$pdo->exec(file_get_contents(__DIR__ . '/../schema.sql'));
+migrate($pdo);
 $vocab = vocab($pdo, 0);
 $stats = [];
 printf("%-60s | %-42s | %-9s | %4s | %s\n", 'url', 'tags (+suggested)', 'category', 'sec', 'title / summary');

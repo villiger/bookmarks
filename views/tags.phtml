@@ -1,0 +1,6 @@
+<div class="tags" id="tg<?= $id ?>">
+<?php foreach ($tags as $t): $e = h(rawurlencode($t)); ?><span class="tag<?= in_array($t, BM_FORMAT_TAGS, true) ? ' fmt' : '' ?>"><a href="?tag=<?= $e ?>" hx-get="search.php?tag=<?= $e ?>" hx-target="#results" hx-swap="innerHTML" hx-push-url="?tag=<?= $e ?>" hx-include="[name=q]"><?= h($t) ?></a><button class="x" title="Remove tag" hx-post="tag.php" hx-vals="<?= tag_vals($id, 'remove', $t) ?>" hx-target="#tg<?= $id ?>" hx-swap="outerHTML">×</button></span>
+<?php endforeach ?>
+<?php foreach ($suggested as $t): ?><span class="tag sugg"><button class="acc" title="Accept suggested tag" hx-post="tag.php" hx-vals="<?= tag_vals($id, 'accept', $t) ?>" hx-target="#tg<?= $id ?>" hx-swap="outerHTML">＋ <?= h($t) ?></button><button class="x" title="Dismiss" hx-post="tag.php" hx-vals="<?= tag_vals($id, 'remove', $t) ?>" hx-target="#tg<?= $id ?>" hx-swap="outerHTML">×</button></span>
+<?php endforeach ?>
+<form class="addtag" hx-post="tag.php" hx-target="#tg<?= $id ?>" hx-swap="outerHTML"><input type="hidden" name="id" value="<?= $id ?>"><input type="hidden" name="action" value="add"><input name="tag" list="vocab" maxlength="24" placeholder="+ tag" autocomplete="off" enterkeyhint="done" required><button type="submit" class="addbtn" title="Add tag" aria-label="Add tag">＋</button></form></div>

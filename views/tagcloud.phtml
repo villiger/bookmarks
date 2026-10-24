@@ -1,0 +1,4 @@
+<div class="tagcloud" id="tagcloud">
+<?php foreach ($tags as $t): $e = h(rawurlencode($t['tag'])); ?><a class="tag" href="?tag=<?= $e ?>" hx-get="search.php?tag=<?= $e ?>" hx-target="#results" hx-push-url="?tag=<?= $e ?>" hx-include="[name=q],[name=sort],[name=seed]"><?= h($t['tag']) ?> <small><?= (int)$t['c'] ?></small></a>
+<?php endforeach ?>
+<a class="more" href="#" hx-get="tags.php?all=<?= $all ? 0 : 1 ?>" hx-target="#tagcloud" hx-swap="outerHTML"><?= $all ? 'less' : 'more' ?></a></div>

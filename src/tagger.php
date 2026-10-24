@@ -2,6 +2,7 @@
 // Tagger: deterministic rules (domain rules, format tags, YouTube category, vocabulary keyword hits) plus ONE OpenRouter call per
 // bookmark for vocabulary picks, new-tag suggestions, category and a short summary. No local ML. Falls back to the rules when the API fails.
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/url.php';
 require_once __DIR__ . '/crawler.php';
 
 const BM_CATEGORIES = ['dev', 'news', 'video', 'shopping', 'reference', 'article', 'tool', 'other'];
@@ -30,13 +31,15 @@ function vocab(PDO $pdo, int $uid, int $limit = 60, bool $all = false): array {
         [$t, $d] = array_pad(explode(':', $l, 2), 2, '');
         if ($t = mb_strtolower(trim($t))) $v[$t] = trim($d) ?: $t;
     }
-    $q = $pdo->prepare("SELECT t.tag FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? AND t.suggested=0 AND (b.tags_edited=1 OR " . (int)$all . ") GROUP BY t.tag ORDER BY COUNT(*) DESC LIMIT $limit");
+    $q = $pdo->prepare("SELECT t.tag FROM tags t JOIN bookmarks b ON b.id=t.bookmark_id WHERE b.user_id=? AND b.deleted_at IS NULL AND t.suggested=0 AND (b.tags_edited=1 OR " . (int)$all . ") GROUP BY t.tag ORDER BY COUNT(*) DESC LIMIT $limit");
     $q->execute([$uid]);
     foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $v[$t] ??= $t;
     return $v;
 }
 
-function host_of(string $url): string { return preg_replace('/^www\./', '', strtolower(parse_url($url, PHP_URL_HOST) ?: '')); }
+/** Vocabulary offered to the user for autocomplete: seed tags + their own tags. */
+function user_vocabulary(int $uid): array { return array_keys(vocab(db(), $uid, 200, true)); }
+
 
 /** domain_rules.txt ("domain => tag, tag | category") for this URL; the first match wins for the category. */
 function domain_rule(string $url): array {
@@ -138,7 +141,7 @@ function novel_tags(array $cands, array $names, string $channel, string $url, ar
 /** Examples of how this user tags: their corrected bookmarks, same domain first, else the most recent. */
 function user_shots(PDO $pdo, int $uid, string $host, int $n = 3): array {
     if ($uid <= 0) return [];
-    $st = $pdo->prepare('SELECT id, title, url FROM bookmarks WHERE user_id=? AND tags_edited=1 ORDER BY id DESC LIMIT 60');
+    $st = $pdo->prepare('SELECT id, title, url FROM bookmarks WHERE user_id=? AND deleted_at IS NULL AND tags_edited=1 ORDER BY id DESC LIMIT 60');
     $st->execute([$uid]);
     $rows = $st->fetchAll();
     usort($rows, fn($a, $b) => (host_of($b['url']) === $host) <=> (host_of($a['url']) === $host));   // stable: same domain first
@@ -159,14 +162,18 @@ function tag_in_text(string $tag, string $desc, string $text): bool {
     return false;
 }
 
+/** Count an OpenRouter call: model '' = every call made (the monthly cap), other rows = the model of the fallback list that answered. */
+function count_api_call(PDO $pdo, string $month, string $model): void {
+    $pdo->prepare('INSERT INTO api_usage(month,model,calls) VALUES(?,?,1) ON CONFLICT(month,model) DO UPDATE SET calls=calls+1')->execute([$month, $model]);
+}
+
 /** Transport: monthly cap + counters, `models` fallback list. @return array{j:array,cost:float}|array{transient:true}|array{} */
 function openrouter_post(PDO $pdo, string $prompt, int $maxTokens): array {
     if (!($key = cfg('openrouter_key'))) return [];
     $month = date('Y-m');
-    $pdo->prepare('INSERT OR IGNORE INTO api_usage(month,calls) VALUES(?,0)')->execute([$month]);
-    $n = $pdo->prepare('SELECT calls FROM api_usage WHERE month=?'); $n->execute([$month]);
+    $n = $pdo->prepare("SELECT calls FROM api_usage WHERE month=? AND model=''"); $n->execute([$month]);
     if ((int)$n->fetchColumn() >= (int)(cfg('openrouter_cap') ?: 3000)) { error_log('openrouter: monthly call cap reached'); return []; }
-    $pdo->prepare('UPDATE api_usage SET calls=calls+1 WHERE month=?')->execute([$month]);
+    count_api_call($pdo, $month, '');
     $ch = curl_init(cfg('openrouter_url') ?: 'https://openrouter.ai/api/v1/chat/completions');
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25, CURLOPT_POST => true,
         CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $key, 'Content-Type: application/json', 'HTTP-Referer: ' . (cfg('base_url') ?: 'https://localhost'), 'X-Title: Bookmarks'],
@@ -180,7 +187,7 @@ function openrouter_post(PDO $pdo, string $prompt, int $maxTokens): array {
     $j = json_decode((string)($r['choices'][0]['message']['content'] ?? ''), true);
     if (!is_array($j)) { error_log('openrouter: failed ' . substr(json_encode($r['error'] ?? curl_error($ch)), 0, 160)); return []; }
     if (!empty($r['model'])) {                                           // which model of the fallback list actually answered
-        $pdo->prepare('INSERT INTO api_model_usage(month,model,calls) VALUES(?,?,1) ON CONFLICT(month,model) DO UPDATE SET calls=calls+1')->execute([$month, $r['model']]);
+        count_api_call($pdo, $month, $r['model']);
         error_log('openrouter: answered by ' . $r['model']);
     }
     $u = $r['usage'] ?? [];
@@ -304,11 +311,11 @@ function llm_retry(PDO $pdo, array $b, array $vocab): string {
     $attempts = (int)$b['llm_attempts'] + 1;
     if (!empty($x['transient'])) {
         $d = llm_backoff($attempts);
-        if ($d === null) { $pdo->prepare('UPDATE bookmarks SET llm_pending=0, llm_attempts=? WHERE id=?')->execute([$attempts, $b['id']]); error_log("openrouter: gave up on #{$b['id']} after $attempts attempts"); return 'gaveup'; }
-        $pdo->prepare('UPDATE bookmarks SET llm_attempts=?, llm_next_at=? WHERE id=?')->execute([$attempts, time() + $d, $b['id']]);
+        if ($d === null) { $pdo->prepare('UPDATE jobs SET llm_pending=0, llm_attempts=? WHERE bookmark_id=?')->execute([$attempts, $b['id']]); error_log("openrouter: gave up on #{$b['id']} after $attempts attempts"); return 'gaveup'; }
+        $pdo->prepare('UPDATE jobs SET llm_attempts=?, llm_next_at=? WHERE bookmark_id=?')->execute([$attempts, time() + $d, $b['id']]);
         return 'retry';
     }
-    $pdo->prepare('UPDATE bookmarks SET llm_pending=0, llm_attempts=?, refresh=0 WHERE id=?')->execute([$attempts, $b['id']]);
+    $pdo->prepare('UPDATE jobs SET llm_pending=0, llm_attempts=?, refresh=0 WHERE bookmark_id=?')->execute([$attempts, $b['id']]);
     if (!$x) return 'gaveup';                                                         // permanent failure or cap reached
     if (!empty($x['summary'])) $pdo->prepare('UPDATE bookmarks SET summary=? WHERE id=? AND text_edited=0')->execute([$x['summary'], $b['id']]);
     if (!empty($x['title'])) $pdo->prepare('UPDATE bookmarks SET title=? WHERE id=? AND text_edited=0')->execute([$x['title'], $b['id']]);

@@ -1,29 +1,27 @@
 <?php
-require_once __DIR__ . '/../src/auth.php';
-require_once __DIR__ . '/_head.php';
+require __DIR__ . '/../src/app.php';
 $me = require_admin();
-header('Cache-Control: no-store');
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();
     $id = (int)($_POST['id'] ?? 0);
-    $u = db()->prepare('SELECT * FROM users WHERE id=?'); $u->execute([$id]); $u = $u->fetch();
+    $u = q('SELECT * FROM users WHERE id=?', [$id])->fetch();
     $act = $_POST['action'] ?? '';
     if ($u && $u['id'] != $me['id']) {
         if ($act === 'approve' && $u['status'] === 'pending') {
-            db()->prepare("UPDATE users SET status='active' WHERE id=?")->execute([$id]);
+            q("UPDATE users SET status='active' WHERE id=?", [$id]);
             email_login_link($u);
         } elseif ($act === 'reject' && $u['status'] === 'pending') {
-            db()->prepare('DELETE FROM users WHERE id=?')->execute([$id]);
+            q('DELETE FROM users WHERE id=?', [$id]);
         } elseif ($act === 'disable' && $u['status'] === 'active') {
-            db()->prepare("UPDATE users SET status='disabled' WHERE id=?")->execute([$id]);
-            db()->prepare('DELETE FROM sessions WHERE user_id=?')->execute([$id]);
+            q("UPDATE users SET status='disabled' WHERE id=?", [$id]);
+            q('DELETE FROM sessions WHERE user_id=?', [$id]);
         } elseif ($act === 'enable' && $u['status'] === 'disabled') {
-            db()->prepare("UPDATE users SET status='active' WHERE id=?")->execute([$id]);
+            q("UPDATE users SET status='active' WHERE id=?", [$id]);
         }
     }
     header('Location: admin.php'); exit;
 }
-$users = db()->query("SELECT * FROM users ORDER BY status='pending' DESC, email")->fetchAll();
+$users = q("SELECT * FROM users ORDER BY status='pending' DESC, email")->fetchAll();
 page_head('Admin'); ?>
 <header><h1>Users</h1><a href="./">← Bookmarks</a></header>
 <?php foreach ($users as $u): ?>

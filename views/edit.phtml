@@ -1,0 +1,7 @@
+<article class="card editing" id="b<?= $id ?>"><form class="editform" hx-post="edit.php" hx-target="#b<?= $id ?>" hx-swap="outerHTML">
+<input type="hidden" name="id" value="<?= $id ?>">
+<label>Title<input name="title" maxlength="300" value="<?= h($r['title']) ?>"></label>
+<label>Description<textarea name="summary" rows="4" maxlength="600"><?= h($shown) ?></textarea></label>
+<label>URL<input name="url" type="text" maxlength="2000" value="<?= h($r['url']) ?>" autocapitalize="off" spellcheck="false"></label>
+<?php if ($err !== ''): ?><div class="err"><?= h($err) ?></div><?php endif ?>
+<div class="btns"><button type="submit">Save</button><button type="button" hx-get="card.php?id=<?= $id ?>" hx-target="#b<?= $id ?>" hx-swap="outerHTML">Cancel</button></div></form></article>

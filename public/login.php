@@ -1,7 +1,5 @@
 <?php
-require_once __DIR__ . '/../src/auth.php';
-require_once __DIR__ . '/_head.php';
-header('Cache-Control: no-store');
+require __DIR__ . '/../src/app.php';
 if (current_user()) { header('Location: ./'); exit; }
 $msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -17,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 email_login_link($u);
             } elseif (!$u) {
                 create_user($email, false, 'pending');
-                $admins = db()->query("SELECT email FROM users WHERE is_admin=1 AND status='active'")->fetchAll(PDO::FETCH_COLUMN);
+                $admins = q("SELECT email FROM users WHERE is_admin=1 AND status='active'")->fetchAll(PDO::FETCH_COLUMN);
                 foreach ($admins as $a) send_mail($a, 'Bookmarks: new account request', "$email requested access.\nReview: " . base_url() . "/admin.php\n");
             }
         }

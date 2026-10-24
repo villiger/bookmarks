@@ -1,6 +1,5 @@
 <?php
-require_once __DIR__ . '/../src/auth.php';
-require_once __DIR__ . '/_head.php';
+require __DIR__ . '/../src/app.php';
 header('Cache-Control: no-store');
 header('Referrer-Policy: no-referrer');
 // GET only shows a page that submits itself (mail scanners/prefetchers fetch links without running JS and must not burn the one-time link); POST consumes it. The button is the no-JS fallback.
@@ -13,5 +12,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 page_head('Confirm login'); ?>
 <main class="login"><h1>Bookmarks</h1>
-<form method="post" id="f"><input type="hidden" name="t" value="<?= h($t) ?>"><button type="submit">Continue</button></form>
-<script>document.getElementById("f").submit()</script></main></body></html>
+<form method="post" data-autosubmit><input type="hidden" name="t" value="<?= h($t) ?>"><button type="submit">Continue</button></form>
+<script src="app.js"></script></main></body></html>

@@ -2,7 +2,7 @@
 function cfg(?string $key = null) {
     static $c = null;
     if ($c === null) {
-        $f = __DIR__ . '/../config.php';
+        $f = getenv('BM_CONFIG') ?: __DIR__ . '/../config.php';   // BM_CONFIG: alternative config file (tests)
         if (!is_file($f)) { http_response_code(500); exit("config.php missing\n"); }
         $c = require $f;
     }

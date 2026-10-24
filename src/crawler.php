@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/url.php';
 const BM_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const BM_UA_ALT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 const BM_MAX_BYTES = 2000000;
@@ -357,7 +358,7 @@ function structured_data(DOMXPath $xp, string $host): array {
 
 /** Brand words (host labels, site name) that must not become tags or stay in titles. */
 function brand_tokens(string $url, string $site = ''): array {
-    $labels = array_slice(explode('.', preg_replace('/^www\./', '', strtolower(parse_url($url, PHP_URL_HOST) ?: ''))), 0, -1);
+    $labels = array_slice(explode('.', host_of($url)), 0, -1);
     $words = array_merge($labels, preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($site), -1, PREG_SPLIT_NO_EMPTY));
     return array_values(array_unique(array_filter($words, fn($w) => mb_strlen($w) >= 4 && !in_array($w, ['news', 'blog', 'home', 'online', 'shop', 'store'], true))));
 }

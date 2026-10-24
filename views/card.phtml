@@ -1,0 +1,10 @@
+<article class="card" id="b<?= $id ?>"<?= $poll ?>>
+<?php if ($r['image']): ?><div class="thumbwrap"><img class="thumb" src="<?= h($r['image']) ?>" alt="" loading="lazy" referrerpolicy="no-referrer"></div><?php endif ?>
+<div class="main"><h3><?php if ($r['favicon']): ?><img class="fav" src="<?= h($r['favicon']) ?>" alt="" loading="lazy" referrerpolicy="no-referrer" width="16" height="16"><?php else: ?><span class="fav"></span><?php endif ?><a href="<?= h($r['url']) ?>" target="_blank" rel="noopener noreferrer"><?= $titleHtml ?></a></h3>
+<div class="meta"><?= h(host_of($r['url'])) ?> · <?= $date ?> <?= $badge ?></div>
+<?php if ($desc): ?><p class="desc"><?= $desc ?></p><?php endif ?><?= $snip ?>
+<?= render_tags($r) ?></div>
+<div class="acts"><button title="Edit" hx-get="edit.php?id=<?= $id ?>" hx-target="#b<?= $id ?>" hx-swap="outerHTML" aria-label="Edit"><?= icon('edit') ?></button>
+<button title="Rescan page (keeps your tags, replaces title and summary)" hx-post="rescan.php" hx-vals='{"id":<?= $id ?>}' hx-target="#b<?= $id ?>" hx-swap="outerHTML" aria-label="Rescan"><?= icon('rescan') ?></button>
+<button class="del" title="Delete" hx-post="delete.php" hx-vals='{"id":<?= $id ?>}' hx-target="#b<?= $id ?>" hx-swap="outerHTML" aria-label="Delete"><?= icon('trash') ?></button></div>
+</article>

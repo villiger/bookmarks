@@ -125,25 +125,5 @@ function normalize_input(string $raw): array {
     return ['url' => clean_url($raw), 'guessed' => $guessed];
 }
 
-/** Insert for a user. @return array{status:string,id?:int,error?:string} */
-function add_bookmark(int $uid, string $raw, string $title = '', array $client = []): array {
-    $n = normalize_input($raw);
-    if (isset($n['error'])) return ['status' => 'invalid', 'error' => $n['error']];
-    $pdo = db();
-    $key = url_key($n['url']);
-    $cols = ['client_title' => 300, 'client_desc' => 600, 'client_image' => 1000, 'client_favicon' => 1000, 'client_canonical' => 1000, 'client_keywords' => 300, 'client_text' => 1500];
-    $cv = array_map(fn($c, $max) => mb_substr(trim((string)($client[$c] ?? '')), 0, $max), array_keys($cols), $cols);
-    $st = $pdo->prepare("INSERT OR IGNORE INTO bookmarks(user_id,url,url_key,scheme_guessed,title," . implode(',', array_keys($cols)) . ",status) VALUES(?,?,?,?,?," . implode(',', array_fill(0, count($cols), '?')) . ",'pending')");
-    $st->execute(array_merge([$uid, $n['url'], $key, $n['guessed'] ? 1 : 0, mb_substr($title, 0, 300)], $cv));
-    if ($st->rowCount()) {
-        $id = (int)$pdo->lastInsertId();
-        fts_reindex($id);
-        return ['status' => 'added', 'id' => $id];
-    }
-    if (array_filter($cv)) {    // re-saving from the browser: keep the richer page data and re-process
-        $pdo->prepare('UPDATE bookmarks SET ' . implode('=?,', array_keys($cols)) . "=?, status='pending', attempts=0, error=NULL WHERE user_id=? AND url_key=?")->execute(array_merge($cv, [$uid, $key]));
-    } else {
-        $pdo->prepare("UPDATE bookmarks SET status='pending', attempts=0, error=NULL WHERE user_id=? AND url_key=? AND status='error'")->execute([$uid, $key]);
-    }
-    return ['status' => 'dup', 'error' => 'Already saved: ' . $n['url']];
-}
+/** Lowercase host without a leading www. ('' if the URL has none). */
+function host_of(string $url): string { return preg_replace('/^www\./', '', strtolower(parse_url($url, PHP_URL_HOST) ?: '')); }
