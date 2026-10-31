@@ -3,7 +3,7 @@
 You are an LLM/coding agent asked to install this app on a Linux VPS. Follow the steps in order, verify each one, and ask the human only for the items marked ASK. Never print secrets back into chat and never commit `config.php`.
 
 ## What this is
-PHP 8 + SQLite (FTS5) + htmx bookmarks service. No Composer, no npm, no build step. Only `public/` is served; the worker `bin/worker.php` runs every minute (crawl + tag via OpenRouter). Details: `README.md`.
+PHP 8 + SQLite (FTS5) + htmx bookmarks service. No Composer, no npm, no build step. Only `public/` is served; the worker `bin/worker.php` runs every minute (crawl + tag via OpenRouter). Details: `README.md`. If the human prefers Docker, skip steps 1-4 and follow README "Deploy with Docker Compose" instead.
 
 ## ASK the human first
 1. Public domain (e.g. `bookmarks.example.com`) whose DNS A/AAAA record already points to the VPS. Or a path on an existing site, see `deploy/nginx-bookmarks.conf`.

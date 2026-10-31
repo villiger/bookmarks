@@ -22,6 +22,14 @@ sudo -u http php bin/create-user.php you@example.com --admin
 ```
 Adjust the web user in `deploy/bookmarks-worker.service`, the PHP-FPM socket and server name in the nginx snippets, and `include` `deploy/nginx-bookmarks-security.conf` in the server block (it sets the strict CSP the app relies on). Use HTTPS; `config.php` and `data/` hold secrets and are never committed.
 
+## Deploy with Docker Compose
+```
+cp .env.example .env            # set BM_BASE_URL (https://your.domain), mail and BM_OPENROUTER_KEY
+docker compose up -d --build
+docker compose exec app php bin/create-user.php you@example.com --admin
+```
+Three containers: `web` (nginx, same rules and CSP as `deploy/`), `app` (PHP-FPM) and `worker` (`bin/worker.php` every minute, output in `docker compose logs worker`). Settings come from `.env` via `docker/config.php` (no `config.php` needed); the database lives in the `data` volume. `web` listens on `127.0.0.1:8080` (`BM_PORT`): put your TLS reverse proxy in front and have it send `X-Forwarded-Proto: https` (secure session cookie). Without SMTP, read login links with `docker compose exec app cat data/mail.log`. Update: `git pull && docker compose up -d --build` (migrations run automatically); back up first with `docker compose exec app php -r '(new PDO("sqlite:data/bookmarks.db"))->exec("VACUUM INTO \"data/backup.db\"");'`.
+
 ## Code layout
 - `public/*.php`: one small entry file per URL; each starts with `require __DIR__ . '/../src/app.php'` and, for htmx endpoints, `endpoint()` / `owned_card()` (session, CSRF, ownership). `public/app.js` holds all browser behaviour (no inline scripts, handlers or eval: the CSP is `script-src 'self'` and htmx runs with `allowEval=false`).
 - `src/`: `db.php` (connection, `q()`, migration runner), `migrations.php` (schema history), `bookmarks.php` (add, trash, search, cards), `pipeline.php` (crawl + tag one bookmark, used by `bin/worker.php`), `crawler.php`, `tagger.php`, `url.php`, `auth.php`, `transfer.php`, `view.php` (prepares data, `render()`), `app.php` (loads everything).
