@@ -10,7 +10,7 @@ $js = bookmarklet_js($user['bookmarklet_key']);
 $reqs = $user['is_admin'] ? (int)q("SELECT COUNT(*) FROM users WHERE status='pending'")->fetchColumn() : 0;
 ?><!doctype html>
 <html lang="en"><head><meta charset="utf-8"><link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="icon" href="favicon-96.png" type="image/png" sizes="96x96"><link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32"><link rel="icon" href="favicon.ico" sizes="48x48"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="manifest" href="manifest.webmanifest"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#141416" media="(prefers-color-scheme: dark)">
-<meta name="htmx-config" content='{"allowEval":false}'><meta name="robots" content="noindex"><title>Bookmarks</title><link rel="stylesheet" href="style.css">
+<meta name="htmx-config" content='{"allowEval":false}'><meta name="robots" content="noindex"><title>Bookmarks</title><link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
 <script src="htmx.min.js"></script>
 </head><body hx-headers='<?= h(json_encode(["X-CSRF-Token" => csrf_token()])) ?>'>
 <header class="top"><a class="brand" href="./"><span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg></span>Bookmarks</a>

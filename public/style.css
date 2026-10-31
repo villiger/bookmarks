@@ -145,4 +145,4 @@ header:not(.top){display:flex;align-items:baseline;gap:12px;margin-bottom:12px}h
 .trashrow{align-items:center;flex-wrap:wrap}.trashrow .main{padding-right:0}.rowacts{display:flex;gap:8px;align-items:center}
 .rowacts button{border:1px solid var(--bd2);background:var(--surface);border-radius:10px;padding:8px 14px;font-size:14px}.rowacts button:hover{border-color:var(--ac);color:var(--ac)}
 .rowacts .primary{border-color:var(--ac);background:var(--ac);color:var(--on-ac);font-weight:600}.rowacts .primary:hover{color:var(--on-ac);filter:brightness(1.06)}
-.shot{max-width:100%;width:320px;height:auto;border:1px solid var(--border,#ddd);border-radius:10px}
+.shot{max-width:100%;width:210px;height:auto;border:1px solid var(--border,#ddd);border-radius:10px}
