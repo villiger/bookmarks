@@ -10,6 +10,16 @@ Tiny self-hosted, multi-user bookmarks: PHP + SQLite (FTS5) + htmx; tags and sum
 5. Tagging needs an OpenRouter key in config.php (see Tagging); nothing else to install.
 6. First admin: `php bin/create-user.php you@example.com --admin` prints a one-time login link (15 min). Run it as the web user so data/ ownership stays right.
 
+## Deploy on a VPS (example: nginx + PHP-FPM, systemd)
+```
+sudo mkdir -p /srv/bookmarks && sudo rsync -rlt --exclude=config.php --exclude=data --exclude=.git ./ /srv/bookmarks/
+cd /srv/bookmarks && sudo cp config.example.php config.php   # set base_url (https://your.domain), mail and openrouter_key
+sudo mkdir -p data && sudo chown -R http:http data config.php && sudo chmod 600 config.php   # web user: http (Arch), www-data (Debian/Ubuntu)
+sudo cp deploy/bookmarks-worker.* /etc/systemd/system/ && sudo systemctl enable --now bookmarks-worker.timer
+sudo -u http php bin/create-user.php you@example.com --admin
+```
+Adjust the web user in `deploy/bookmarks-worker.service`, the PHP-FPM socket and server name in the nginx snippets, and `include` `deploy/nginx-bookmarks-security.conf` in the server block (it sets the strict CSP the app relies on). Use HTTPS; `config.php` and `data/` hold secrets and are never committed.
+
 ## Code layout
 - `public/*.php`: one small entry file per URL; each starts with `require __DIR__ . '/../src/app.php'` and, for htmx endpoints, `endpoint()` / `owned_card()` (session, CSRF, ownership). `public/app.js` holds all browser behaviour (no inline scripts, handlers or eval: the CSP is `script-src 'self'` and htmx runs with `allowEval=false`).
 - `src/`: `db.php` (connection, `q()`, migration runner), `migrations.php` (schema history), `bookmarks.php` (add, trash, search, cards), `pipeline.php` (crawl + tag one bookmark, used by `bin/worker.php`), `crawler.php`, `tagger.php`, `url.php`, `auth.php`, `transfer.php`, `view.php` (prepares data, `render()`), `app.php` (loads everything).
