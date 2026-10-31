@@ -32,6 +32,7 @@ $reqs = $user['is_admin'] ? (int)q("SELECT COUNT(*) FROM users WHERE status='pen
 <li>Add <b>Get Contents of URL</b>: URL <code><?= h(base_url() . '/add.php') ?></code>, Method <b>POST</b>, Request Body <b>JSON</b> with <code>k</code> = your key (Text) and <code>u</code> = <b>Shortcut Input</b>. That is enough; <code>format</code> is optional (Form also works).</li>
 <li>Add <b>Get Dictionary Value</b> for <code>status</code>, then <b>Show Notification</b>: "Saved ✓ (status)".</li>
 </ol>
+<p><img src="shortcut-example.jpg" alt="Finished Shortcut: Receive URLs from Share Sheet, Get contents of URL, Get Dictionary Value for status, Show notification" class="shot" loading="lazy"><br><small>How the finished Shortcut looks (the request body with <code>k</code> and <code>u</code> is hidden behind the arrow).</small></p>
 <p>The Shortcut syncs to your Mac via iCloud and appears in Safari's Share menu there too. To share it, create an iCloud link with the key removed and add an Import Question for <code>k</code>.</p></details></section>
 <section><h4>Your data</h4>
 <details><summary>Import / export</summary>
