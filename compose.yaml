@@ -1,0 +1,32 @@
+# Docker setup: web (nginx) -> app (php-fpm), plus the worker. Settings come from .env (copy .env.example), data lives in the `data` volume.
+x-app: &app
+  build: { context: ., target: app }
+  restart: unless-stopped
+  volumes: [data:/srv/bookmarks/data]
+  environment:
+    BM_BASE_URL: ${BM_BASE_URL:?set BM_BASE_URL in .env}
+    BM_MAIL_FROM: ${BM_MAIL_FROM:-}
+    BM_SMTP_HOST: ${BM_SMTP_HOST:-}
+    BM_SMTP_PORT: ${BM_SMTP_PORT:-}
+    BM_SMTP_SECURE: ${BM_SMTP_SECURE:-}
+    BM_SMTP_USER: ${BM_SMTP_USER:-}
+    BM_SMTP_PASS: ${BM_SMTP_PASS:-}
+    BM_OPENROUTER_KEY: ${BM_OPENROUTER_KEY:-}
+    BM_OPENROUTER_MODELS: ${BM_OPENROUTER_MODELS:-}
+    BM_OPENROUTER_CAP: ${BM_OPENROUTER_CAP:-}
+    BM_YOUTUBE_API_KEY: ${BM_YOUTUBE_API_KEY:-}
+
+services:
+  app: *app
+  worker:
+    <<: *app
+    init: true   # lets the shell loop stop promptly on `docker compose down`
+    command: ["sh", "-c", "while :; do php bin/worker.php; sleep 60; done"]   # flock inside worker.php prevents overlap
+  web:
+    build: { context: ., target: web }
+    restart: unless-stopped
+    depends_on: [app]
+    ports: ["${BM_PORT:-127.0.0.1:8080}:80"]
+
+volumes:
+  data:
