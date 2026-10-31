@@ -2,6 +2,8 @@
 
 Tiny self-hosted, multi-user bookmarks: PHP + SQLite (FTS5) + htmx; tags and summaries from rules plus one OpenRouter call per bookmark.
 
+> Installing with an AI agent? Point it at [AGENTS.md](AGENTS.md).
+
 ## Setup
 1. PHP 8 with pdo_sqlite, curl, dom, mbstring.
 2. `cp config.example.php config.php`; set `base_url` (e.g. `http://host/bookmarks`, no trailing slash) and optionally `smtp`.
